@@ -1,6 +1,5 @@
-// Buyer.jsx - ONLY ALL BUYERS SECTION VERSION
 import React, { useState, useEffect } from 'react';
-import { FiUser, FiX, FiEdit2, FiTrash2, FiPlus, FiEye, FiBriefcase, FiFileText, FiImage } from 'react-icons/fi';
+import { FiUser, FiX, FiEdit2, FiTrash2, FiPlus, FiEye, FiBriefcase, FiFileText, FiImage, FiPackage } from 'react-icons/fi';
 
 const Buyer = () => {
   const [allBuyers, setAllBuyers] = useState([]);
@@ -11,15 +10,15 @@ const Buyer = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showProductsModal, setShowProductsModal] = useState(false);
+  const [buyerProducts, setBuyerProducts] = useState([]);
   const [viewModalActiveTab, setViewModalActiveTab] = useState('buyer');
-
   const [formData, setFormData] = useState({
     name: '',
     mobile: '',
     email: '',
     password: '',
     approve_status: 'Pending',
-    device_token: 'default_device_token',
     company_name: '',
     company_website: '',
     company_GST_number: '',
@@ -40,9 +39,7 @@ const Buyer = () => {
     driving_license_back: null,
     image: null
   });
-  
   const [formErrors, setFormErrors] = useState({});
-  
   const [filePreviews, setFilePreviews] = useState({
     image: '',
     aadhar_front: '',
@@ -50,27 +47,22 @@ const Buyer = () => {
     driving_license_front: '',
     driving_license_back: ''
   });
-
   const API_BASE = 'http://rettalion.apxfarms.com';
 
   const validateForm = () => {
     const errors = {};
-    
     // Required fields validation
     if (!formData.name?.trim()) errors.name = 'Name is required';
     if (!formData.mobile?.trim()) errors.mobile = 'Mobile number is required';
     if (!formData.email?.trim()) errors.email = 'Email is required';
     if (showAddModal && !formData.password?.trim()) errors.password = 'Password is required for new buyers';
-    
     // Format validation
     if (formData.mobile && !/^\d{10}$/.test(formData.mobile.replace(/\D/g, ''))) {
       errors.mobile = 'Please enter a valid 10-digit mobile number';
     }
-    
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    if (formData.email && !/^[^\s@]+@[^\s@]+.[^\s@]+$/.test(formData.email)) {
       errors.email = 'Please enter a valid email address';
     }
-    
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -81,16 +73,13 @@ const Buyer = () => {
     try {
       console.log('Fetching all buyers...');
       const response = await fetch(`${API_BASE}/buyers`);
-      
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Fetch buyers error response:', errorText);
         throw new Error(`Failed to fetch buyers list: ${response.status} ${response.statusText}`);
       }
-      
       const data = await response.json();
       console.log('Fetched buyers data:', data);
-      
       // Ensure data is an array before setting it
       if (Array.isArray(data)) {
         setAllBuyers(data);
@@ -110,6 +99,175 @@ const Buyer = () => {
     }
   };
 
+  const fetchBuyerOrders = async (buyerId) => {
+    setLoading(true);
+    setError('');
+    try {
+      console.log(`Fetching orders for buyer ${buyerId}...`);
+      const response = await fetch(`${API_BASE}/orderbuyer/${buyerId}`);
+      // Handle 404 specifically - it means no orders found
+      if (response.status === 404) {
+        console.log(`No orders found for buyer ${buyerId}`);
+        setBuyerProducts([]);
+        setError(''); // Clear any previous errors
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`Failed to fetch orders for buyer: ${response.status} ${response.statusText}`);
+      }
+      let data = await response.json();
+      console.log('Fetched buyer orders data:', data);
+      // Assuming data is an array of orders, each with products
+      if (Array.isArray(data)) {
+        // Enrich with product names
+        data = await Promise.all(data.map(async (order) => {
+          const enrichedProducts = await Promise.all(order.products.map(async (prod) => {
+            try {
+              const prodRes = await fetch(`${API_BASE}/product/${prod.product_id}`);
+              if (prodRes.ok) {
+                const prodData = await prodRes.json();
+                console.log(`Product data for ${prod.product_id}:`, prodData);
+                // Try multiple possible structures for product name
+                const productName = prodData.data ? 
+                  (prodData.data.name || prodData.data.product?.name) : 
+                  (prodData.product ? prodData.product.name : (prodData.name || 'Unknown Product'));
+                prod.name = productName;
+              } else {
+                console.error(`Failed to fetch product ${prod.product_id}: ${prodRes.status}`);
+                prod.name = 'Unknown Product';
+              }
+            } catch (err) {
+              console.error(`Error fetching product ${prod.product_id}:`, err);
+              prod.name = 'Unknown Product';
+            }
+            return prod;
+          }));
+          order.products = enrichedProducts;
+          return order;
+        }));
+      } else if (data && Array.isArray(data.orders)) {
+        // Similar enrichment for data.orders
+        data.orders = await Promise.all(data.orders.map(async (order) => {
+          const enrichedProducts = await Promise.all(order.products.map(async (prod) => {
+            try {
+              const prodRes = await fetch(`${API_BASE}/product/${prod.product_id}`);
+              if (prodRes.ok) {
+                const prodData = await prodRes.json();
+                console.log(`Product data for ${prod.product_id}:`, prodData);
+                // Try multiple possible structures for product name
+                const productName = prodData.data ? 
+                  (prodData.data.name || prodData.data.product?.name) : 
+                  (prodData.product ? prodData.product.name : (prodData.name || 'Unknown Product'));
+                prod.name = productName;
+              } else {
+                console.error(`Failed to fetch product ${prod.product_id}: ${prodRes.status}`);
+                prod.name = 'Unknown Product';
+              }
+            } catch (err) {
+              console.error(`Error fetching product ${prod.product_id}:`, err);
+              prod.name = 'Unknown Product';
+            }
+            return prod;
+          }));
+          order.products = enrichedProducts;
+          return order;
+        }));
+        data = data.orders;
+      } else {
+        data = [];
+      }
+      setBuyerProducts(data);
+    } catch (err) {
+      console.error('Fetch buyer orders error:', err);
+      // Don't set error for 404 - it's normal when no orders exist
+      if (!err.message.includes('404')) {
+        setError(err.message);
+      } else {
+        setError(''); // Clear error for 404 cases
+      }
+      setBuyerProducts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleProducts = async (buyerId) => {
+    try {
+      const buyerResponse = await fetch(`${API_BASE}/buyer/${buyerId}`);
+      if (buyerResponse.ok) {
+        const buyerDetails = await buyerResponse.json();
+        setSelectedBuyer(buyerDetails);
+      } else {
+        setSelectedBuyer({ id: buyerId, buyer: { name: 'Unknown' } });
+      }
+    } catch (err) {
+      console.error('Error fetching buyer details for orders:', err);
+      setSelectedBuyer({ id: buyerId, buyer: { name: 'Unknown' } });
+    }
+    // Clear previous products and error before fetching new ones
+    setBuyerProducts([]);
+    setError('');
+    await fetchBuyerOrders(buyerId);
+    setShowProductsModal(true);
+  };
+
+  const updateBuyerStatus = async (buyerId, newStatus) => {
+    setLoading(true);
+    setError('');
+    try {
+      // Structure the data according to API format
+      const requestData = {
+        buyer: {
+          approve_status: newStatus
+        }
+      };
+      // Create FormData for the request
+      const formDataPayload = new FormData();
+      formDataPayload.append('data', JSON.stringify(requestData));
+      console.log(`Updating status for buyer ${buyerId} to ${newStatus}...`);
+      const response = await fetch(`${API_BASE}/buyer/${buyerId}`, {
+        method: 'PATCH',
+        headers: {
+          'Accept': 'application/json',
+        },
+        body: formDataPayload,
+      });
+      if (!response.ok) {
+        let errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          console.error('Server error response:', errorData);
+          if (errorData.message) {
+            errorMessage = errorData.message;
+          } else if (errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch (parseError) {
+          console.error('Could not parse error response:', parseError);
+        }
+        throw new Error(errorMessage);
+      }
+      // Update local state
+      setAllBuyers(prev => prev.map(item => {
+        if (item.buyer?.id === buyerId) {
+          return { ...item, buyer: { ...item.buyer, approve_status: newStatus } };
+        }
+        // Fallback for flat structure
+        if (item.id === buyerId) {
+          return { ...item, approve_status: newStatus };
+        }
+        return item;
+      }));
+      alert('Buyer status updated successfully!');
+    } catch (err) {
+      setError(err.message);
+      console.error('Update status error:', err);
+      alert('Failed to update buyer status');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const addBuyer = async (buyerData) => {
     setLoading(true);
     setError('');
@@ -119,7 +277,6 @@ const Buyer = () => {
       if (!buyerData.mobile?.trim()) throw new Error('Mobile number is required');
       if (!buyerData.email?.trim()) throw new Error('Email is required');
       if (!buyerData.password?.trim()) throw new Error('Password is required');
-
       // Structure the data according to API format
       const requestData = {
         buyer: {
@@ -127,8 +284,7 @@ const Buyer = () => {
           mobile: buyerData.mobile.trim(),
           email: buyerData.email.trim(),
           password: buyerData.password.trim(),
-          approve_status: buyerData.approve_status || 'Pending',
-          device_token: buyerData.device_token || 'default_device_token'
+          approve_status: buyerData.approve_status || 'Pending'
         },
         company: {
           company_name: buyerData.company_name?.trim() || '',
@@ -149,20 +305,16 @@ const Buyer = () => {
           driving_license_dob: buyerData.driving_license_dob?.trim() || ''
         }
       };
-
       // Create FormData for the request
       const formDataPayload = new FormData();
       formDataPayload.append('data', JSON.stringify(requestData));
-
       // Append files if they exist
       if (buyerData.image) formDataPayload.append('image', buyerData.image);
       if (buyerData.aadhar_front) formDataPayload.append('aadhar_front', buyerData.aadhar_front);
       if (buyerData.aadhar_back) formDataPayload.append('aadhar_back', buyerData.aadhar_back);
       if (buyerData.driving_license_front) formDataPayload.append('driving_license_front', buyerData.driving_license_front);
       if (buyerData.driving_license_back) formDataPayload.append('driving_license_back', buyerData.driving_license_back);
-
       console.log('Creating buyer with FormData...');
-      
       const response = await fetch(`${API_BASE}/buyer`, {
         method: 'POST',
         headers: {
@@ -170,13 +322,11 @@ const Buyer = () => {
         },
         body: formDataPayload,
       });
-      
       if (!response.ok) {
         let errorMessage = `Server error: ${response.status} ${response.statusText}`;
         try {
           const errorData = await response.json();
           console.error('Server error response:', errorData);
-          
           if (errorData.errors && Array.isArray(errorData.errors)) {
             const fieldErrors = errorData.errors.map(err => `${err.field}: ${err.message}`).join(', ');
             errorMessage = `Validation Error: ${fieldErrors}`;
@@ -196,7 +346,6 @@ const Buyer = () => {
         }
         throw new Error(errorMessage);
       }
-      
       const data = await response.json();
       await fetchAllBuyers();
       setShowAddModal(false);
@@ -222,8 +371,7 @@ const Buyer = () => {
           name: updatedData.name?.trim() || '',
           mobile: updatedData.mobile?.trim() || '',
           email: updatedData.email?.trim() || '',
-          approve_status: updatedData.approve_status || 'Pending',
-          device_token: updatedData.device_token || ''
+          approve_status: updatedData.approve_status || 'Pending'
         },
         company: {
           company_name: updatedData.company_name?.trim() || '',
@@ -244,25 +392,20 @@ const Buyer = () => {
           driving_license_dob: updatedData.driving_license_dob?.trim() || ''
         }
       };
-
       // Add password only if provided
       if (updatedData.password?.trim()) {
         requestData.buyer.password = updatedData.password.trim();
       }
-
       // Create FormData and append the structured data
       const formDataPayload = new FormData();
       formDataPayload.append('data', JSON.stringify(requestData));
-
       // Append files if they exist
       if (updatedData.image) formDataPayload.append('image', updatedData.image);
       if (updatedData.aadhar_front) formDataPayload.append('aadhar_front', updatedData.aadhar_front);
       if (updatedData.aadhar_back) formDataPayload.append('aadhar_back', updatedData.aadhar_back);
       if (updatedData.driving_license_front) formDataPayload.append('driving_license_front', updatedData.driving_license_front);
       if (updatedData.driving_license_back) formDataPayload.append('driving_license_back', updatedData.driving_license_back);
-
       console.log('Updating buyer with data:', requestData);
-
       const response = await fetch(`${API_BASE}/buyer/${buyerId}`, {
         method: 'PATCH',
         headers: {
@@ -270,12 +413,10 @@ const Buyer = () => {
         },
         body: formDataPayload,
       });
-      
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || 'Failed to update buyer data');
       }
-      
       const data = await response.json();
       await fetchAllBuyers();
       setShowEditModal(false);
@@ -296,11 +437,9 @@ const Buyer = () => {
       const response = await fetch(`${API_BASE}/buyer/${buyerId}`, {
         method: 'DELETE',
       });
-      
       if (!response.ok) {
         throw new Error('Failed to delete buyer');
       }
-      
       await fetchAllBuyers();
       setShowDeleteModal(false);
       setSelectedBuyer(null);
@@ -314,7 +453,6 @@ const Buyer = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    
     // Update form data directly
     setFormData({
       ...formData,
@@ -325,13 +463,11 @@ const Buyer = () => {
   const handleFileChange = (e) => {
     const { name, files } = e.target;
     const file = files[0];
-    
     if (file) {
       setFormData(prev => ({
         ...prev,
         [name]: file
       }));
-
       const reader = new FileReader();
       reader.onload = (e) => {
         setFilePreviews(prev => ({
@@ -350,7 +486,6 @@ const Buyer = () => {
       email: '',
       password: '',
       approve_status: 'Pending',
-      device_token: 'default_device_token',
       company_name: '',
       company_website: '',
       company_GST_number: '',
@@ -371,7 +506,6 @@ const Buyer = () => {
       driving_license_back: null,
       image: null
     });
-    
     setFilePreviews({
       image: '',
       aadhar_front: '',
@@ -379,7 +513,6 @@ const Buyer = () => {
       driving_license_front: '',
       driving_license_back: ''
     });
-    
     setFormErrors({});
     setError('');
   };
@@ -388,14 +521,11 @@ const Buyer = () => {
     e.preventDefault();
     setError('');
     setFormErrors({});
-
     if (!validateForm()) {
       return;
     }
-
     try {
       console.log('Submitting form data...');
-      
       // Create structured data for API
       const requestData = {
         buyer: {
@@ -403,8 +533,7 @@ const Buyer = () => {
           mobile: formData.mobile.trim(),
           email: formData.email.trim(),
           password: formData.password?.trim(),
-          approve_status: formData.approve_status || 'Pending',
-          device_token: formData.device_token || ''
+          approve_status: formData.approve_status || 'Pending'
         },
         company: {
           company_name: formData.company_name?.trim() || '',
@@ -425,20 +554,16 @@ const Buyer = () => {
           driving_license_dob: formData.driving_license_dob?.trim() || ''
         }
       };
-
       console.log('Request data:', requestData);
-
       // Create FormData and append the structured data
       const formDataPayload = new FormData();
       formDataPayload.append('data', JSON.stringify(requestData));
-
       // Append files if they exist
       if (formData.image) formDataPayload.append('image', formData.image);
       if (formData.aadhar_front) formDataPayload.append('aadhar_front', formData.aadhar_front);
       if (formData.aadhar_back) formDataPayload.append('aadhar_back', formData.aadhar_back);
       if (formData.driving_license_front) formDataPayload.append('driving_license_front', formData.driving_license_front);
       if (formData.driving_license_back) formDataPayload.append('driving_license_back', formData.driving_license_back);
-      
       if (showAddModal) {
         console.log('Adding new buyer...');
         const response = await fetch(`${API_BASE}/buyer`, {
@@ -448,27 +573,22 @@ const Buyer = () => {
           },
           body: formDataPayload,
         });
-
         let responseData;
         const responseText = await response.text();
         console.log('Server response text:', responseText);
-
         try {
           responseData = JSON.parse(responseText);
         } catch (parseError) {
           console.error('Failed to parse response as JSON:', parseError);
           throw new Error('Invalid response from server');
         }
-
         if (!response.ok) {
           console.error('Server error response:', responseData);
           throw new Error(responseData.message || responseData.error || 'Failed to add buyer');
         }
-
         console.log('Buyer added successfully:', responseData);
         setShowAddModal(false);
         resetForm();
-        
         // Wait a moment before fetching updated buyer list
         setTimeout(async () => {
           try {
@@ -477,13 +597,11 @@ const Buyer = () => {
             console.error('Error fetching updated buyer list:', fetchError);
           }
         }, 1000);
-
         alert('Buyer added successfully!');
       } else if (showEditModal && selectedBuyer) {
         console.log('Updating existing buyer...');
         await updateBuyer(selectedBuyer.buyer.id, formData);
         setShowEditModal(false);
-        
         // Wait a moment before fetching updated buyer list
         setTimeout(async () => {
           try {
@@ -493,10 +611,8 @@ const Buyer = () => {
           }
         }, 1000);
       }
-      
     } catch (err) {
       console.error('Submit error:', err);
-      
       // Handle field-specific errors
       if (err.message.includes('required')) {
         const fieldName = err.message.split(' is ')[0].toLowerCase();
@@ -536,15 +652,12 @@ const Buyer = () => {
         throw new Error('Failed to fetch buyer details');
       }
       const buyerDetails = await response.json();
-      
       setFormData({
         name: buyerDetails.buyer?.name || '',
         mobile: buyerDetails.buyer?.mobile || '',
         email: buyerDetails.buyer?.email || '',
         password: '',
         approve_status: buyerDetails.buyer?.approve_status || 'Pending',
-        device_token: buyerDetails.buyer?.device_token || 'default_device_token',
-        
         company_name: buyerDetails.company?.company_name || '',
         company_website: buyerDetails.company?.company_website || '',
         company_GST_number: buyerDetails.company?.company_GST_number || '',
@@ -556,7 +669,6 @@ const Buyer = () => {
         city: buyerDetails.company?.city || '',
         state: buyerDetails.company?.state || '',
         pincode: buyerDetails.company?.pincode || '',
-        
         aadhar_number: buyerDetails.kyc?.aadhar_number || '',
         driving_license_number: buyerDetails.kyc?.driving_license_number || '',
         driving_license_dob: buyerDetails.kyc?.driving_license_dob || '',
@@ -566,7 +678,6 @@ const Buyer = () => {
         driving_license_back: null,
         image: null
       });
-
       setFilePreviews({
         image: buyerDetails.buyer?.image ? `${API_BASE}${buyerDetails.buyer.image}` : '',
         aadhar_front: buyerDetails.kyc?.aadhar_front ? `${API_BASE}${buyerDetails.kyc.aadhar_front}` : '',
@@ -574,7 +685,6 @@ const Buyer = () => {
         driving_license_front: buyerDetails.kyc?.driving_license_front ? `${API_BASE}${buyerDetails.kyc.driving_license_front}` : '',
         driving_license_back: buyerDetails.kyc?.driving_license_back ? `${API_BASE}${buyerDetails.kyc.driving_license_back}` : ''
       });
-      
       setSelectedBuyer(buyerDetails);
       setShowEditModal(true);
     } catch (err) {
@@ -589,7 +699,7 @@ const Buyer = () => {
 
   const confirmDelete = async () => {
     if (!selectedBuyer) return;
-    await deleteBuyer(selectedBuyer.id);
+    await deleteBuyer(selectedBuyer.id || selectedBuyer.buyer?.id);
   };
 
   useEffect(() => {
@@ -599,7 +709,6 @@ const Buyer = () => {
   // Improved helper function to extract company data
   const getCompanyData = (buyerData) => {
     console.log('Buyer data for company extraction:', buyerData);
-    
     // Check different possible structures
     if (buyerData.company && typeof buyerData.company === 'object') {
       return buyerData.company;
@@ -629,7 +738,6 @@ const Buyer = () => {
   // Improved helper function to extract buyer data
   const getBuyerData = (buyerData) => {
     console.log('Raw buyer data:', buyerData);
-    
     if (buyerData.buyer && typeof buyerData.buyer === 'object') {
       return buyerData.buyer;
     }
@@ -649,7 +757,7 @@ const Buyer = () => {
 
   const ApproveStatusBadge = ({ status }) => (
     <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${
-      status === 'Approved' 
+      status === 'Approved'
         ? 'bg-green-100 text-green-800'
         : status === 'Rejected'
         ? 'bg-red-100 text-red-800'
@@ -676,7 +784,7 @@ const Buyer = () => {
           />
         </div>
         {preview && (
-          <img 
+          <img
             src={preview}
             alt="Preview"
             className="h-16 w-16 rounded object-cover border"
@@ -699,8 +807,8 @@ const Buyer = () => {
     <div className="flex flex-col items-center">
       <span className="text-sm font-medium text-gray-600 mb-2">{label}</span>
       {src ? (
-        <img 
-          src={src} 
+        <img
+          src={src}
           alt={alt}
           className="h-24 w-24 object-cover rounded-lg border border-gray-300"
         />
@@ -732,7 +840,6 @@ const Buyer = () => {
             </button>
           </div>
         </div>
-
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -759,10 +866,8 @@ const Buyer = () => {
                 // Extract buyer and company data properly using helper functions
                 const buyer = getBuyerData(buyerData);
                 const company = getCompanyData(buyerData);
-                
                 console.log(`Buyer ${index + 1}:`, buyer);
                 console.log(`Company ${index + 1}:`, company);
-                
                 return (
                   <tr key={buyer.id || index} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
@@ -791,9 +896,9 @@ const Buyer = () => {
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900">
                         {company.company_website ? (
-                          <a 
-                            href={company.company_website} 
-                            target="_blank" 
+                          <a
+                            href={company.company_website}
+                            target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:text-blue-800 break-all"
                           >
@@ -805,51 +910,165 @@ const Buyer = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <ApproveStatusBadge status={buyer.approve_status} />
+                      <select
+                        value={buyer.approve_status || 'Pending'}
+                        onChange={(e) => updateBuyerStatus(buyer.id, e.target.value)}
+                        disabled={loading}
+                        className={`text-sm px-2 py-1 rounded-md border focus:outline-none focus:ring-2 transition-colors ${
+                          loading
+                            ? 'bg-gray-100 cursor-not-allowed'
+                            : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400'
+                        }`}
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="Approved">Approved</option>
+                        <option value="Rejected">Rejected</option>
+                      </select>
                     </td>
-<td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-  <div className="flex items-center space-x-3">
-    {/* View Button - Blue with Eye Icon */}
-    <button
-      onClick={() => handleView(buyer.id)}
-      className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-      title="View Buyer Details"
-    >
-      <FiEye className="h-5 w-5" />
-    </button>
-
-    {/* Edit Button - Green with Pencil Icon */}
-    <button
-      onClick={() => handleEdit(buyer.id)}
-      className="p-2 text-green-600 hover:bg-green-50 rounded-md transition-colors"
-      title="Edit Buyer"
-    >
-      <FiEdit2 className="h-5 w-5" />
-    </button>
-
-    {/* Delete Button - Red with Trash Icon */}
-    <button
-      onClick={() => handleDelete(buyerData)}
-      className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors"
-      title="Delete Buyer"
-    >
-      <FiTrash2 className="h-5 w-5" />
-    </button>
-  </div>
-</td>
-
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center space-x-3">
+                        {/* View Button - Blue with Eye Icon */}
+                        <button
+                          onClick={() => handleView(buyer.id)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                          title="View Buyer Details"
+                        >
+                          <FiEye className="h-5 w-5" />
+                        </button>
+                        {/* Edit Button - Green with Pencil Icon */}
+                        <button
+                          onClick={() => handleEdit(buyer.id)}
+                          className="p-2 text-green-600 hover:bg-green-50 rounded-md transition-colors"
+                          title="Edit Buyer"
+                        >
+                          <FiEdit2 className="h-5 w-5" />
+                        </button>
+                        {/* Delete Button - Red with Trash Icon */}
+                        <button
+                          onClick={() => handleDelete(buyerData)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                          title="Delete Buyer"
+                        >
+                          <FiTrash2 className="h-5 w-5" />
+                        </button>
+                        {/* Orders Button - Purple with Package Icon */}
+                        <button
+                          onClick={() => handleProducts(buyer.id)}
+                          className="p-2 text-purple-600 hover:bg-purple-50 rounded-md transition-colors"
+                          title="View Buyer Orders"
+                        >
+                          <FiPackage className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
-
         {allBuyers.length === 0 && (
           <div className="text-center py-8 text-gray-500">
             No buyers found
           </div>
         )}
+      </div>
+    </div>
+  );
+
+  const renderProductsModal = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white">
+          <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+            <FiPackage className="text-purple-500" />
+            Buyer Orders - {selectedBuyer?.buyer?.name || 'Unknown'}
+          </h2>
+          <button
+            onClick={() => setShowProductsModal(false)}
+            className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
+          >
+            <FiX className="text-xl" />
+          </button>
+        </div>
+        <div className="p-6">
+          {loading ? (
+            <div className="flex justify-center items-center py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+            </div>
+          ) : buyerProducts.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <FiPackage className="mx-auto text-4xl text-gray-300 mb-4" />
+              <p className="text-lg font-medium text-gray-600">No orders found for this buyer.</p>
+              <p className="text-sm text-gray-500 mt-2">This buyer hasn't placed any orders yet.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Order ID
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Products
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Total Quantity
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Total Amount
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Order Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {buyerProducts.map((order) => {
+                    const totalQuantity = order.products.reduce((sum, p) => sum + parseInt(p.quantity || 0), 0);
+                    const totalAmount = order.products.reduce((sum, p) => sum + (parseFloat(p.price || 0) * parseInt(p.quantity || 0)), 0);
+                    const productNamesArray = order.products.map(p => p.name || 'Unknown Product');
+                    const uniqueProductNames = [...new Set(productNamesArray)].join(', ');
+                    const statuses = order.products.map(p => p.order_status).filter(Boolean);
+                    const uniqueStatuses = [...new Set(statuses)];
+                    const orderStatus = uniqueStatuses.length === 1 ? uniqueStatuses[0] : uniqueStatuses.join(', ');
+                    const statusClass = orderStatus === 'Delivered'
+                      ? 'bg-green-100 text-green-800'
+                      : orderStatus === 'Pending'
+                      ? 'bg-yellow-100 text-yellow-800'
+                      : orderStatus === 'Shipped'
+                      ? 'bg-blue-100 text-blue-800'
+                      : orderStatus === 'Returned'
+                      ? 'bg-red-100 text-red-800'
+                      : 'bg-gray-100 text-gray-800';
+                    return (
+                      <tr key={order.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          #{order.id}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900 max-w-xs" title={uniqueProductNames}>
+                          {uniqueProductNames.length > 50 ? `${uniqueProductNames.substring(0, 50)}...` : uniqueProductNames}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {totalQuantity || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                          ₹{totalAmount.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${statusClass}`}>
+                            {orderStatus}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -861,11 +1080,10 @@ const Buyer = () => {
           <h1 className="text-3xl font-bold text-gray-900">Buyer Management</h1>
           <p className="text-gray-600 mt-2">Manage and view all buyers</p>
         </div>
-
         {error && (
           <div className="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
             <strong>Error: </strong>{error}
-            <button 
+            <button
               onClick={() => setError('')}
               className="float-right font-bold"
             >
@@ -873,15 +1091,12 @@ const Buyer = () => {
             </button>
           </div>
         )}
-
-        {loading && (
+        {loading && !showProductsModal && (
           <div className="flex justify-center items-center py-8">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
           </div>
         )}
-
         {renderAllBuyersTab()}
-
         {showViewModal && selectedBuyer && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -897,7 +1112,6 @@ const Buyer = () => {
                   <FiX className="text-xl" />
                 </button>
               </div>
-
               <div className="p-6">
                 {/* View Modal Tabs */}
                 <div className="mb-6 border-b border-gray-200">
@@ -943,7 +1157,6 @@ const Buyer = () => {
                     </button>
                   </nav>
                 </div>
-
                 {/* Buyer Information Tab */}
                 {viewModalActiveTab === 'buyer' && (
                   <div className="bg-gray-50 rounded-lg p-4">
@@ -955,11 +1168,10 @@ const Buyer = () => {
                       <InfoField label="Approval Status" value={selectedBuyer.buyer?.approve_status} />
                       <InfoField label="Device Token" value={selectedBuyer.buyer?.device_token} />
                       <InfoField label="Created Date" value={selectedBuyer.buyer?.created_at} type="date" />
-                      
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between py-2 border-b border-gray-100">
                         <span className="text-sm font-medium text-gray-600 mb-2 sm:mb-0">Profile Image</span>
                         {selectedBuyer.buyer?.image ? (
-                          <img 
+                          <img
                             src={`${API_BASE}${selectedBuyer.buyer.image}`}
                             alt="Profile"
                             className="h-16 w-16 rounded object-cover border"
@@ -971,7 +1183,6 @@ const Buyer = () => {
                     </div>
                   </div>
                 )}
-
                 {/* Company Information Tab */}
                 {viewModalActiveTab === 'company' && selectedBuyer.company && (
                   <div className="bg-gray-50 rounded-lg p-4">
@@ -990,7 +1201,6 @@ const Buyer = () => {
                     </div>
                   </div>
                 )}
-
                 {/* KYC Information Tab */}
                 {viewModalActiveTab === 'kyc' && selectedBuyer.kyc && (
                   <div className="bg-gray-50 rounded-lg p-4">
@@ -998,24 +1208,23 @@ const Buyer = () => {
                       <InfoField label="Aadhar Number" value={selectedBuyer.kyc.aadhar_number} />
                       <InfoField label="Driving License Number" value={selectedBuyer.kyc.driving_license_number} />
                       <InfoField label="Driving License DOB" value={selectedBuyer.kyc.driving_license_dob} />
-                      
                       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-4">
-                        <ImagePreview 
+                        <ImagePreview
                           src={selectedBuyer.kyc.aadhar_front ? `${API_BASE}${selectedBuyer.kyc.aadhar_front}` : ''}
                           alt="Aadhar Front"
                           label="Aadhar Front"
                         />
-                        <ImagePreview 
+                        <ImagePreview
                           src={selectedBuyer.kyc.aadhar_back ? `${API_BASE}${selectedBuyer.kyc.aadhar_back}` : ''}
                           alt="Aadhar Back"
                           label="Aadhar Back"
                         />
-                        <ImagePreview 
+                        <ImagePreview
                           src={selectedBuyer.kyc.driving_license_front ? `${API_BASE}${selectedBuyer.kyc.driving_license_front}` : ''}
                           alt="Driving License Front"
                           label="License Front"
                         />
-                        <ImagePreview 
+                        <ImagePreview
                           src={selectedBuyer.kyc.driving_license_back ? `${API_BASE}${selectedBuyer.kyc.driving_license_back}` : ''}
                           alt="Driving License Back"
                           label="License Back"
@@ -1024,7 +1233,6 @@ const Buyer = () => {
                     </div>
                   </div>
                 )}
-
                 <div className="flex gap-3 pt-4">
                   <button
                     onClick={() => setShowViewModal(false)}
@@ -1046,7 +1254,6 @@ const Buyer = () => {
             </div>
           </div>
         )}
-
         {(showAddModal || showEditModal) && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -1065,7 +1272,6 @@ const Buyer = () => {
                   <FiX className="text-xl" />
                 </button>
               </div>
-
               <form onSubmit={handleSubmit} className="p-6">
                 {error && (
                   <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -1091,8 +1297,8 @@ const Buyer = () => {
                           onChange={handleInputChange}
                           placeholder="Enter buyer name"
                           className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
-                            formErrors.name 
-                              ? 'border-red-500 focus:ring-red-200' 
+                            formErrors.name
+                              ? 'border-red-500 focus:ring-red-200'
                               : 'border-gray-300 focus:ring-blue-200 focus:border-blue-500'
                           }`}
                         />
@@ -1111,8 +1317,8 @@ const Buyer = () => {
                           onChange={handleInputChange}
                           placeholder="Enter 10-digit mobile"
                           className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
-                            formErrors.mobile 
-                              ? 'border-red-500 focus:ring-red-200' 
+                            formErrors.mobile
+                              ? 'border-red-500 focus:ring-red-200'
                               : 'border-gray-300 focus:ring-blue-200 focus:border-blue-500'
                           }`}
                         />
@@ -1131,8 +1337,8 @@ const Buyer = () => {
                           onChange={handleInputChange}
                           placeholder="Enter email address"
                           className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
-                            formErrors.email 
-                              ? 'border-red-500 focus:ring-red-200' 
+                            formErrors.email
+                              ? 'border-red-500 focus:ring-red-200'
                               : 'border-gray-300 focus:ring-blue-200 focus:border-blue-500'
                           }`}
                         />
@@ -1151,8 +1357,8 @@ const Buyer = () => {
                           onChange={handleInputChange}
                           placeholder={showAddModal ? "Enter password" : "Leave blank to keep current"}
                           className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${
-                            formErrors.password 
-                              ? 'border-red-500 focus:ring-red-200' 
+                            formErrors.password
+                              ? 'border-red-500 focus:ring-red-200'
                               : 'border-gray-300 focus:ring-blue-200 focus:border-blue-500'
                           }`}
                         />
@@ -1163,32 +1369,23 @@ const Buyer = () => {
                           <p className="text-xs text-gray-500 mt-1">Leave blank to keep current password</p>
                         )}
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Approval Status</label>
-                        <select
-                          name="approve_status"
-                          value={formData.approve_status}
-                          onChange={handleInputChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        >
-                          <option value="Pending">Pending</option>
-                          <option value="Approved">Approved</option>
-                          <option value="Rejected">Rejected</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Device Token</label>
-                        <input
-                          type="text"
-                          name="device_token"
-                          value={formData.device_token}
-                          onChange={handleInputChange}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Enter device token"
-                        />
-                      </div>
+                      {showEditModal && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Approval Status</label>
+                          <select
+                            name="approve_status"
+                            value={formData.approve_status}
+                            onChange={handleInputChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Approved">Approved</option>
+                            <option value="Rejected">Rejected</option>
+                          </select>
+                        </div>
+                      )}
                       <div className="md:col-span-3">
-                        <FileUpload 
+                        <FileUpload
                           name="image"
                           label="Profile Image"
                           preview={filePreviews.image}
@@ -1196,7 +1393,6 @@ const Buyer = () => {
                       </div>
                     </div>
                   </div>
-
                   <div>
                     <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                       <FiBriefcase className="text-green-500" />
@@ -1250,14 +1446,20 @@ const Buyer = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Annual Turnover</label>
-                        <input
-                          type="text"
+                        <select
                           name="annual_turnover"
                           value={formData.annual_turnover}
                           onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Enter annual turnover"
-                        />
+                        >
+                          <option value="">Select Annual Turnover</option>
+                          <option value="below 20 lakh">Below 20 Lakh</option>
+                          <option value="20-50 lakh">20-50 Lakh</option>
+                          <option value="50-1 cr">50 Lakh - 1 Cr</option>
+                          <option value="1-5 cr">1-5 Cr</option>
+                          <option value="5-10 cr">5-10 Cr</option>
+                          <option value="10-20 cr">10-20 Cr</option>
+                        </select>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Facebook Link</label>
@@ -1327,7 +1529,6 @@ const Buyer = () => {
                       </div>
                     </div>
                   </div>
-
                   <div>
                     <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                       <FiFileText className="text-purple-500" />
@@ -1360,31 +1561,30 @@ const Buyer = () => {
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Driving License DOB</label>
                         <input
-                          type="text"
+                          type="date"
                           name="driving_license_dob"
                           value={formData.driving_license_dob}
                           onChange={handleInputChange}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Enter driving license DOB"
                         />
                       </div>
                       <div></div>
-                      <FileUpload 
+                      <FileUpload
                         name="aadhar_front"
                         label="Aadhar Front"
                         preview={filePreviews.aadhar_front}
                       />
-                      <FileUpload 
+                      <FileUpload
                         name="aadhar_back"
                         label="Aadhar Back"
                         preview={filePreviews.aadhar_back}
                       />
-                      <FileUpload 
+                      <FileUpload
                         name="driving_license_front"
                         label="Driving License Front"
                         preview={filePreviews.driving_license_front}
                       />
-                      <FileUpload 
+                      <FileUpload
                         name="driving_license_back"
                         label="Driving License Back"
                         preview={filePreviews.driving_license_back}
@@ -1392,7 +1592,6 @@ const Buyer = () => {
                     </div>
                   </div>
                 </div>
-
                 <div className="flex gap-3 mt-6">
                   <button
                     type="button"
@@ -1417,7 +1616,6 @@ const Buyer = () => {
             </div>
           </div>
         )}
-
         {showDeleteModal && selectedBuyer && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
@@ -1450,6 +1648,7 @@ const Buyer = () => {
             </div>
           </div>
         )}
+        {showProductsModal && renderProductsModal()}
       </div>
     </div>
   );

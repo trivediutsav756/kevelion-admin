@@ -1,28 +1,121 @@
-// components/Seller.jsx
 import React, { useState, useEffect } from 'react';
-import { 
-  FiRefreshCw, 
-  FiUser, 
-  FiX, 
-  FiCreditCard, 
-  FiFileText, 
-  FiBriefcase, 
-  FiEdit2, 
-  FiTrash2, 
-  FiPlus, 
-  FiImage, 
-  FiPackage, 
-  FiEye, 
+import {
+  FiRefreshCw,
+  FiUser,
+  FiX,
+  FiCreditCard,
+  FiFileText,
+  FiBriefcase,
+  FiEdit2,
+  FiTrash2,
+  FiImage,
+  FiPackage,
+  FiEye,
   FiAlertCircle,
-  FiUserCheck,
-  FiCheckCircle 
+  FiCalendar,
+  FiClock,
+  FiSearch,
+  FiPlus,
 } from 'react-icons/fi';
-
-// API Base URL
 const API_BASE_URL = 'http://rettalion.apxfarms.com';
-
+// Company type options (value matches API exactly)
+const COMPANY_TYPE_OPTIONS = [
+  { label: 'Proprietorship', value: 'Proprietorship' },
+  { label: 'Partnership', value: 'Partnership' },
+  { label: 'LLP', value: 'Limited Liability Partnership (LLP)' },
+  { label: 'Private Limited Company', value: 'Private Limited Company' },
+  { label: 'Public Limited Company', value: 'Public Limited Company' },
+  { label: 'Proprietorship Firm', value: 'Proprietorship Firm' },
+  { label: 'MSME', value: 'MSME' },
+  { label: 'Other', value: 'other' },
+];
+// Normalize company type from API into our canonical values
+const COMPANY_TYPE_MAP = {
+  'Proprietorship': 'Proprietorship',
+  'Partnership': 'Partnership',
+  'Limited Liability Partnership (LLP)': 'Limited Liability Partnership (LLP)',
+  'Private Limited Company': 'Private Limited Company',
+  'Public Limited Company': 'Public Limited Company',
+  'Proprietorship Firm': 'Proprietorship Firm',
+  'MSME': 'MSME',
+  'other': 'other',
+  'Other': 'other',
+  'LLP': 'Limited Liability Partnership (LLP)',
+  'Private Limited': 'Private Limited Company',
+  'Public Limited': 'Public Limited Company',
+};
+const normalizeCompanyType = (val) => COMPANY_TYPE_MAP[val] || 'Proprietorship';
+// Annual turnover normalization
+// API uses values like: 'below 20 lakh', '20-50 lakh', '50-1 cr', '1-5 cr', '5-10 cr', '10-20 cr'
+const normalizeAnnualTurnover = (val) => {
+  const lower = val?.toString().toLowerCase() || '';
+  if (!lower) return '';
+  if (lower.includes('below 20') || lower.includes('below_20') || lower.includes('below20')) return 'below 20 lakh';
+  if (lower.includes('20-50') || lower.includes('20 50')) return '20-50 lakh';
+  if (lower.includes('50-1') || lower.includes('50 lakh - 1')) return '50-1 cr';
+  if (lower.includes('1-5') || lower.includes('1 5')) return '1-5 cr';
+  if (lower.includes('5-10') || lower.includes('5 10')) return '5-10 cr';
+  if (lower.includes('10-20') || lower.includes('10 20')) return '10-20 cr';
+  return val;
+};
+// Helpers for image URL and fallback
+const PLACEHOLDER_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+     <rect width="100%" height="100%" fill="#e5e7eb"/>
+     <text x="50%" y="50%" fill="#9ca3af" font-size="24" text-anchor="middle" dominant-baseline="middle">No Image</text>
+   </svg>`
+);
+const toAbsoluteUrl = (base, path) => {
+  if (!path) return '';
+  const s = String(path).trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      const baseHost = new URL(base).host;
+      if (u.protocol === 'http:' && u.host === baseHost) {
+        u.protocol = 'https:';
+        return encodeURI(u.toString());
+      }
+      return encodeURI(s);
+    } catch {
+      return s;
+    }
+  }
+  const b = base.replace(/\/+$/, '');
+  const rel = s.startsWith('/') ? s : `/${s}`;
+  return encodeURI(`${b}${rel}`);
+};
+const getProductImageUrl = (product) => {
+  console.log('Product data for image:', product);
+  let candidate =
+    product?.f_image ||
+    product?.image_url ||
+    product?.image ||
+    product?.featured_image ||
+    product?.product_image ||
+    product?.main_image ||
+    product?.photo ||
+    product?.photo_url ||
+    (Array.isArray(product?.images) && product.images[0]) ||
+    product?.image_path ||
+    '';
+  if (candidate && !candidate.startsWith('/') && !candidate.startsWith('http') && !candidate.includes('/storage/')) {
+    candidate = `/storage/${candidate}`;
+    console.log('Prepended /storage/ to candidate:', candidate);
+  }
+  console.log('Image candidate:', candidate);
+  if (!candidate) {
+    console.log('No image candidate found - check API fields');
+    return '';
+  }
+  const absoluteUrl = toAbsoluteUrl(API_BASE_URL, candidate);
+  console.log('Absolute URL:', absoluteUrl);
+  return absoluteUrl;
+};
 const Seller = () => {
   const [sellers, setSellers] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedSeller, setSelectedSeller] = useState(null);
@@ -34,9 +127,23 @@ const Seller = () => {
   const [sellerProducts, setSellerProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState('');
-  const [debugMode, setDebugMode] = useState(false);
-
-  // Form states
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [showProductDeleteModal, setShowProductDeleteModal] = useState(false);
+  const [productFormData, setProductFormData] = useState({
+    name: '',
+    detail: '',
+    price: '',
+    moq: '',
+    status: 'Active',
+    f_image: null,
+  });
+  const [productFilePreview, setProductFilePreview] = useState('');
+  // Package history states
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [packageHistory, setPackageHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     mobile: '',
@@ -53,7 +160,7 @@ const Seller = () => {
     company_logo: null,
     company_website: '',
     IEC_code: '',
-    annual_turnover: '20-50_lakh',
+    annual_turnover: '20-50 lakh',
     facebook_link: '',
     linkedin_link: '',
     insta_link: '',
@@ -72,8 +179,6 @@ const Seller = () => {
     account_number: '',
     account_type: ''
   });
-
-  // File preview states
   const [filePreviews, setFilePreviews] = useState({
     company_logo: '',
     aadhar_front: '',
@@ -83,253 +188,744 @@ const Seller = () => {
     gst_certificate: '',
     cancelled_cheque_photo: ''
   });
-
-  // Fetch sellers from API
+  // Filtered sellers based on search
+  const filteredSellers = sellers.filter(seller =>
+    seller.id?.toString().includes(searchTerm) ||
+    seller.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    seller.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    seller.mobile?.includes(searchTerm) ||
+    seller.package_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    seller.company_name?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  // ============ Utilities ============
+  const StatusBadge = ({ status }) => (
+    <span className={`inline-flex px-2.5 py-0.5 text-xs font-semibold rounded-full ${
+      status === 'Active' ? 'bg-green-100 text-green-800' :
+      status === 'Inactive' ? 'bg-red-100 text-red-800' :
+      'bg-gray-100 text-gray-800'
+    }`}>
+      {status || 'Unknown'}
+    </span>
+  );
+  const ApproveStatusBadge = ({ status, onClick }) => (
+    <button
+      onClick={onClick}
+      className={`inline-flex px-2.5 py-0.5 text-xs font-semibold rounded-full cursor-pointer transition-colors hover:opacity-80 ${
+        status === 'Approved' ? 'bg-green-100 text-green-800 hover:bg-green-200' :
+        status === 'Rejected' ? 'bg-red-100 text-red-800 hover:bg-red-200' :
+        'bg-blue-100 text-blue-800 hover:bg-blue-200'
+      }`}
+    >
+      {status || 'Pending'}
+    </button>
+  );
+  const HistoryStatusBadge = ({ status }) => {
+    const isActive = status === 'Active' || status === 'active';
+    const isExpired = status === 'Expired' || status === 'expired';
+    const isPending = status === 'Pending' || status === 'pending';
+    return (
+      <span className={`inline-flex px-2.5 py-0.5 text-xs font-semibold rounded-full ${
+        isActive ? 'bg-green-100 text-green-800' :
+        isExpired ? 'bg-red-100 text-red-800' :
+        isPending ? 'bg-yellow-100 text-yellow-800' :
+        'bg-gray-100 text-gray-800'
+      }`}>
+        {status || 'Unknown'}
+      </span>
+    );
+  };
+  const ImagePreview = ({ src, alt, label }) => (
+    <div className="flex flex-col items-center p-3 bg-gray-50 rounded-lg">
+      <span className="text-xs font-medium text-gray-600 mb-2">{label}</span>
+      {src ? (
+        <a href={src} target="_blank" rel="noopener noreferrer">
+          <img
+            src={src}
+            alt={alt}
+            className="h-20 w-20 object-cover rounded border-2 border-gray-300 hover:border-blue-500 cursor-pointer transition-all"
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = PLACEHOLDER_IMG;
+            }}
+          />
+        </a>
+      ) : (
+        <div className="h-20 w-20 bg-gray-200 rounded border-2 border-gray-300 flex items-center justify-center">
+          <FiImage className="text-gray-400 text-2xl" />
+        </div>
+      )}
+    </div>
+  );
+  const ProductImage = ({ product, className = "h-12 w-12" }) => {
+    const [imgSrc, setImgSrc] = useState(PLACEHOLDER_IMG);
+    const [imgLoading, setImgLoading] = useState(true);
+    const [errorMsg, setErrorMsg] = useState('');
+    useEffect(() => {
+      const loadImage = async () => {
+        if (!product) {
+          setImgLoading(false);
+          return;
+        }
+        const imageUrl = getProductImageUrl(product);
+        console.log('Loading product image:', imageUrl);
+        if (!imageUrl) {
+          setErrorMsg('No image URL');
+          setImgLoading(false);
+          return;
+        }
+        const img = new Image();
+        img.onload = () => {
+          console.log('Image loaded successfully:', imageUrl);
+          setImgSrc(imageUrl);
+          setErrorMsg('');
+          setImgLoading(false);
+        };
+        img.onerror = () => {
+          console.log('Image failed to load:', imageUrl);
+          setImgSrc(PLACEHOLDER_IMG);
+          setErrorMsg('Failed to load');
+          setImgLoading(false);
+        };
+        img.src = imageUrl;
+      };
+      loadImage();
+    }, [product]);
+    if (imgLoading) {
+      return (
+        <div className={`${className} bg-gray-200 rounded border-2 border-gray-300 flex items-center justify-center`}>
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600"></div>
+        </div>
+      );
+    }
+    return (
+      <div className={`${className} relative group`}>
+        <img
+          src={imgSrc}
+          alt={product?.name || 'Product Image'}
+          className={`${className} object-cover rounded border-2 border-gray-200 group-hover:border-purple-500 transition-all`}
+          onError={(e) => {
+            console.log('Fallback error on img tag');
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = PLACEHOLDER_IMG;
+          }}
+        />
+        {errorMsg && (
+          <div className="absolute -bottom-2 left-0 z-10 text-xs text-red-500 bg-red-100 px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+            {errorMsg}
+          </div>
+        )}
+      </div>
+    );
+  };
+  const InfoField = ({ label, value, type = 'text' }) => {
+    const formatDate = (dateString) => {
+      if (!dateString) return 'N/A';
+      try {
+        return new Date(dateString).toLocaleDateString('en-IN', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch {
+        return 'N/A';
+      }
+    };
+    return (
+      <div className="py-2 border-b border-gray-100 last:border-0">
+        <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
+          <span className="text-sm font-medium text-gray-600">{label}</span>
+          <span className="text-sm text-gray-900 sm:text-right break-words">
+            {type === 'date' ? formatDate(value) : (value || 'N/A')}
+          </span>
+        </div>
+      </div>
+    );
+  };
+  const FileUpload = ({ name, label, accept = "image/*", preview, required = false }) => {
+    const hint = accept.includes('pdf')
+      ? 'Max 5MB • JPG, PNG, GIF, PDF'
+      : 'Max 5MB • JPG, PNG, GIF';
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <input
+              type="file"
+              name={name}
+              accept={accept}
+              onChange={handleFileChange}
+              className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+            />
+            <p className="text-xs text-gray-500 mt-1">{hint}</p>
+          </div>
+          {preview && (
+            <img
+              src={preview}
+              alt="Preview"
+              className="h-16 w-16 rounded object-cover border-2 border-gray-200"
+              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = PLACEHOLDER_IMG; }}
+            />
+          )}
+        </div>
+      </div>
+    );
+  };
+  const ProductFileUpload = ({ name, label, preview, required = false }) => {
+    const hint = 'Max 5MB • JPG, PNG, GIF';
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <input
+              type="file"
+              name={name}
+              accept="image/*"
+              onChange={handleProductFileChange}
+              className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer"
+            />
+            <p className="text-xs text-gray-500 mt-1">{hint}</p>
+          </div>
+          {preview && (
+            <img
+              src={preview}
+              alt="Preview"
+              className="h-16 w-16 rounded object-cover border-2 border-gray-200"
+              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = PLACEHOLDER_IMG; }}
+            />
+          )}
+        </div>
+      </div>
+    );
+  };
+  // ============ UPDATED: 10-DAY RED ALERT FOR PACKAGE END DATE ============
+  const formatSubscriptionEndDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      const today = new Date();
+      const diffTime = date - today;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const formattedDate = date.toLocaleDateString('en-IN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+      if (diffDays < 0) {
+        // Expired - Red
+        return <span className="text-red-600 font-medium">{formattedDate} (Expired)</span>;
+      } else if (diffDays <= 10) {
+        // Within 10 days - Red with warning
+        return <span className="text-red-600 font-medium">{formattedDate} ({diffDays}d left) ⚠️</span>;
+      } else {
+        // More than 10 days - Green
+        return <span className="text-green-600 font-medium">{formattedDate} ({diffDays}d left)</span>;
+      }
+    } catch {
+      return 'N/A';
+    }
+  };
+  const formatHistoryDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      return new Date(dateString).toLocaleDateString('en-IN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'N/A';
+    }
+  };
+  const calculateDuration = (startDate, endDate) => {
+    if (!startDate || !endDate) return 'N/A';
+    try {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const diffTime = Math.abs(end - start);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      if (diffDays < 30) {
+        return `${diffDays} days`;
+      } else if (diffDays < 365) {
+        const months = Math.floor(diffDays / 30);
+        return `${months} month${months > 1 ? 's' : ''}`;
+      } else {
+        const years = Math.floor(diffDays / 365);
+        return `${years} year${years > 1 ? 's' : ''}`;
+      }
+    } catch {
+      return 'N/A';
+    }
+  };
+  // ============ Data Fetch ============
   const fetchSellers = async () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`${API_BASE_URL}/sellers`, {
+      const response = await fetch(`${API_BASE_URL}/sellerswithPackage`, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers: { 'Accept': 'application/json' },
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch sellers: ${response.status}`);
-      }
-      
+      if (!response.ok) throw new Error(`Failed to fetch sellers: ${response.status}`);
       const data = await response.json();
-      if (debugMode) console.log('Fetched sellers:', data);
-      setSellers(Array.isArray(data) ? data : []);
+      const sellersData = Array.isArray(data) ? data : [];
+      // Fetch full details for each seller to get company_website
+      const enrichedSellers = await Promise.all(
+        sellersData.map(async (seller) => {
+          try {
+            const detailResponse = await fetch(`${API_BASE_URL}/seller/${seller.id}`, {
+              headers: { 'Accept': 'application/json' },
+            });
+            if (detailResponse.ok) {
+              const detailData = await detailResponse.json();
+              const fullSeller = detailData.data || detailData;
+              // Merge company_website from full details into the seller object
+              return {
+                ...seller,
+                company_website: fullSeller.company?.company_website || seller.company_website || ''
+              };
+            }
+          } catch (err) {
+            console.log('Failed to fetch details for seller:', seller.id);
+          }
+          return seller;
+        })
+      );
+      setSellers(enrichedSellers);
     } catch (err) {
       setError('Error fetching sellers: ' + err.message);
-      console.error('Fetch error:', err);
       setSellers([]);
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchSellers();
-  }, []);
-
-  // Handle view seller details
+  useEffect(() => { fetchSellers(); }, []);
+  const handleApprovalStatusChange = async (sellerId, newStatus) => {
+    try {
+      setError('');
+      const payload = {
+        seller: {
+          approve_status: newStatus
+        }
+      };
+      const res = await fetch(`${API_BASE_URL}/seller/${sellerId}`, {
+        method: 'PATCH',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      const text = await res.text();
+      let data;
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { message: text }; }
+      if (!res.ok) {
+        const fieldErrors = data?.errors
+          ? Object.entries(data.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')
+          : '';
+        throw new Error([data?.message || `Failed to update status: ${res.status}`, fieldErrors].filter(Boolean).join('\n'));
+      }
+      await fetchSellers();
+      alert(`Approval status updated to ${newStatus}!`);
+    } catch (err) {
+      setError('Error updating approval status: ' + err.message);
+    }
+  };
   const handleView = async (sellerId) => {
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE_URL}/seller/${sellerId}`, {
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers: { 'Accept': 'application/json' },
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch seller details');
-      }
-      
+      if (!response.ok) throw new Error('Failed to fetch seller details');
       const sellerData = await response.json();
-      if (debugMode) console.log('Seller details:', sellerData);
-      setSelectedSeller(sellerData);
+      const processedData = sellerData.data || sellerData;
+      setSelectedSeller(processedData);
       setShowViewModal(true);
     } catch (err) {
       setError('Error fetching seller details: ' + err.message);
-      console.error('View error:', err);
     } finally {
       setLoading(false);
     }
   };
-
-  // Handle edit seller
   const handleEdit = async (sellerId) => {
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE_URL}/seller/${sellerId}`, {
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers: { 'Accept': 'application/json' },
       });
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch seller details');
-      }
-      
+      if (!response.ok) throw new Error('Failed to fetch seller details');
       const sellerData = await response.json();
-      if (debugMode) console.log('Editing seller:', sellerData);
-      
+      const processedData = sellerData.data || sellerData;
       setFormData({
-        name: sellerData.seller?.name || '',
-        mobile: sellerData.seller?.mobile || '',
-        email: sellerData.seller?.email || '',
+        name: processedData.seller?.name || '',
+        mobile: processedData.seller?.mobile || '',
+        email: processedData.seller?.email || '',
         password: '',
-        status: sellerData.seller?.status || 'Active',
-        approve_status: sellerData.seller?.approve_status || 'Pending',
-        device_token: sellerData.seller?.device_token || 'default_device_token',
-        subscription: sellerData.seller?.subscription || 0,
-        subscription_package_id: sellerData.seller?.subscription_package_id || null,
-        company_name: sellerData.company?.company_name || '',
-        company_type: sellerData.company?.company_type || 'Proprietorship',
-        company_GST_number: sellerData.company?.company_GST_number || '',
+        status: processedData.seller?.status || 'Active',
+        approve_status: processedData.seller?.approve_status || 'Pending',
+        device_token: processedData.seller?.device_token || 'default_device_token',
+        subscription: processedData.seller?.subscription || 0,
+        subscription_package_id: processedData.seller?.subscription_package_id || null,
+        company_name: processedData.company?.company_name || '',
+        company_type: normalizeCompanyType(processedData.company?.company_type || 'Proprietorship'),
+        company_GST_number: processedData.company?.company_GST_number || '',
         company_logo: null,
-        company_website: sellerData.company?.company_website || '',
-        IEC_code: sellerData.company?.IEC_code || '',
-        annual_turnover: sellerData.company?.annual_turnover || '20-50_lakh',
-        facebook_link: sellerData.company?.facebook_link || '',
-        linkedin_link: sellerData.company?.linkedin_link || '',
-        insta_link: sellerData.company?.insta_link || '',
-        city: sellerData.company?.city || '',
-        state: sellerData.company?.state || '',
-        pincode: sellerData.company?.pincode || '',
-        aadhar_number: sellerData.kyc?.aadhar_number || '',
+        company_website: processedData.company?.company_website || '',
+        IEC_code: processedData.company?.IEC_code || '',
+        annual_turnover: normalizeAnnualTurnover(processedData.company?.annual_turnover || '20-50 lakh'),
+        facebook_link: processedData.company?.facebook_link || '',
+        linkedin_link: processedData.company?.linkedin_link || '',
+        insta_link: processedData.company?.insta_link || '',
+        city: processedData.company?.city || '',
+        state: processedData.company?.state || '',
+        pincode: processedData.company?.pincode || '',
+        aadhar_number: processedData.kyc?.aadhar_number || '',
         aadhar_front: null,
         aadhar_back: null,
         company_registration: null,
         company_pan_card: null,
         gst_certificate: null,
         cancelled_cheque_photo: null,
-        bank_name: sellerData.bank?.bank_name || '',
-        bank_IFSC_code: sellerData.bank?.bank_IFSC_code || '',
-        account_number: sellerData.bank?.account_number || '',
-        account_type: sellerData.bank?.account_type || ''
+        bank_name: processedData.bank?.bank_name || '',
+        bank_IFSC_code: processedData.bank?.bank_IFSC_code || '',
+        account_number: processedData.bank?.account_number || '',
+        account_type: processedData.bank?.account_type || ''
       });
-
       setFilePreviews({
-        company_logo: sellerData.company?.company_logo ? `${API_BASE_URL}${sellerData.company.company_logo}` : '',
-        aadhar_front: sellerData.kyc?.aadhar_front ? `${API_BASE_URL}${sellerData.kyc.aadhar_front}` : '',
-        aadhar_back: sellerData.kyc?.aadhar_back ? `${API_BASE_URL}${sellerData.kyc.aadhar_back}` : '',
-        company_registration: sellerData.kyc?.company_registration ? `${API_BASE_URL}${sellerData.kyc.company_registration}` : '',
-        company_pan_card: sellerData.kyc?.company_pan_card ? `${API_BASE_URL}${sellerData.kyc.company_pan_card}` : '',
-        gst_certificate: sellerData.kyc?.gst_certificate ? `${API_BASE_URL}${sellerData.kyc.gst_certificate}` : '',
-        cancelled_cheque_photo: sellerData.bank?.cancelled_cheque_photo ? `${API_BASE_URL}${sellerData.bank.cancelled_cheque_photo}` : ''
+        company_logo: processedData.company?.company_logo ? toAbsoluteUrl(API_BASE_URL, processedData.company.company_logo) : '',
+        aadhar_front: processedData.kyc?.aadhar_front ? toAbsoluteUrl(API_BASE_URL, processedData.kyc.aadhar_front) : '',
+        aadhar_back: processedData.kyc?.aadhar_back ? toAbsoluteUrl(API_BASE_URL, processedData.kyc.aadhar_back) : '',
+        company_registration: processedData.kyc?.company_registration ? toAbsoluteUrl(API_BASE_URL, processedData.kyc.company_registration) : '',
+        company_pan_card: processedData.kyc?.company_pan_card ? toAbsoluteUrl(API_BASE_URL, processedData.kyc.company_pan_card) : '',
+        gst_certificate: processedData.kyc?.gst_certificate ? toAbsoluteUrl(API_BASE_URL, processedData.kyc.gst_certificate) : '',
+        cancelled_cheque_photo: processedData.bank?.cancelled_cheque_photo ? toAbsoluteUrl(API_BASE_URL, processedData.bank.cancelled_cheque_photo) : ''
       });
-      
-      setSelectedSeller(sellerData);
+      setSelectedSeller(processedData);
       setShowEditModal(true);
     } catch (err) {
       setError('Error fetching seller details: ' + err.message);
-      console.error('Edit error:', err);
     } finally {
       setLoading(false);
     }
   };
-
-  // Handle delete seller
   const handleDelete = (seller) => {
     setSelectedSeller(seller);
     setShowDeleteModal(true);
   };
-
-  // Handle view products
+  const confirmDelete = async () => {
+    if (!selectedSeller) return;
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/seller/${selectedSeller.id}`, {
+        method: 'DELETE',
+        headers: { 'Accept': 'application/json' },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to delete seller');
+      }
+      await fetchSellers();
+      setShowDeleteModal(false);
+      setSelectedSeller(null);
+      setError('');
+      alert('Seller deleted successfully!');
+    } catch (err) {
+      setError('Error deleting seller: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
   const handleViewProducts = async (seller) => {
     setSelectedSeller(seller);
     setShowProductsModal(true);
     setProductsLoading(true);
     setProductsError('');
     setSellerProducts([]);
-    
     try {
+      console.log('Fetching products for seller:', seller.id);
       const response = await fetch(`${API_BASE_URL}/product_seller/${seller.id}`, {
-        headers: {
-          'Accept': 'application/json',
-        },
+        headers: { 'Accept': 'application/json' },
       });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch products: ${response.status}`);
-      }
-      
+      if (!response.ok) throw new Error(`Failed to fetch products: ${response.status}`);
       const data = await response.json();
-      if (debugMode) console.log('Products response:', data);
-      
+      console.log('Products API response:', data);
       if (data.success && Array.isArray(data.data)) {
         setSellerProducts(data.data);
+        console.log('Products loaded successfully, count:', data.data.length);
+        data.data.forEach((product, index) => {
+          console.log(`Product ${index + 1}:`, {
+            name: product.name,
+            imageFields: {
+              f_image: product.f_image,
+              image_url: product.image_url,
+              image: product.image,
+              featured_image: product.featured_image,
+              product_image: product.product_image,
+              main_image: product.main_image,
+              photo: product.photo,
+              photo_url: product.photo_url,
+              images: product.images,
+              image_path: product.image_path
+            },
+            fullProduct: product
+          });
+        });
       } else {
         setSellerProducts([]);
       }
     } catch (err) {
-      console.error('Error fetching products:', err);
       setProductsError('Failed to load products: ' + err.message);
       setSellerProducts([]);
     } finally {
       setProductsLoading(false);
     }
   };
-
-  // Confirm delete
-  const confirmDelete = async () => {
-    if (!selectedSeller) return;
-    
+  const handleViewHistory = async (seller) => {
+    setSelectedSeller(seller);
+    setShowHistoryModal(true);
+    setHistoryLoading(true);
+    setHistoryError('');
+    setPackageHistory([]);
     try {
-      setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/seller/${selectedSeller.id}`, {
-        method: 'DELETE',
+      const sellerId = seller.id || seller.seller?.id;
+      if (!sellerId) {
+        throw new Error('Seller ID not found');
+      }
+      console.log('📦 Fetching package history for seller ID:', sellerId);
+      console.log('📦 API URL:', `${API_BASE_URL}/seller/package-history/${sellerId}`);
+      const response = await fetch(`${API_BASE_URL}/seller/package-history/${sellerId}`, {
+        method: 'GET',
         headers: {
           'Accept': 'application/json',
+          'Content-Type': 'application/json'
         },
       });
-
+      console.log('📦 Response status:', response.status);
+      console.log('📦 Response headers:', Object.fromEntries(response.headers.entries()));
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('📦 Error response:', errorText);
+        throw new Error(`Failed to fetch history: ${response.status} - ${errorText}`);
+      }
+      const responseText = await response.text();
+      console.log('📦 Raw response:', responseText);
+      let data;
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (parseError) {
+        console.error('📦 JSON parse error:', parseError);
+        throw new Error('Invalid JSON response from server');
+      }
+      console.log('📦 Parsed data:', data);
+      console.log('📦 Data type:', typeof data);
+      console.log('📦 Is array:', Array.isArray(data));
+      let historyData = [];
+      if (data.success && Array.isArray(data.data)) {
+        historyData = data.data;
+        console.log('📦 Found data in success.data structure');
+      } else if (Array.isArray(data.history)) {
+        historyData = data.history;
+        console.log('📦 Found data in history array');
+      } else if (Array.isArray(data)) {
+        historyData = data;
+        console.log('📦 Data is direct array');
+      } else if (data.data && Array.isArray(data.data)) {
+        historyData = data.data;
+        console.log('📦 Found data in data array');
+      }
+      console.log('📦 History data count:', historyData.length);
+      console.log('📦 First history item:', historyData[0]);
+      historyData.sort((a, b) => {
+        const dateA = new Date(a.created_at || a.start_date || 0);
+        const dateB = new Date(b.created_at || b.start_date || 0);
+        return dateB - dateA;
+      });
+      setPackageHistory(historyData);
+      console.log('✅ Package history loaded successfully:', historyData.length, 'records');
+    } catch (err) {
+      console.error('❌ Error fetching package history:', err);
+      setHistoryError('Failed to load package history: ' + err.message);
+      setPackageHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+  // Product CRUD
+  const handleEditProduct = (product) => {
+    setProductFormData({
+      name: product.name || '',
+      detail: product.detail || '',
+      price: product.price || '',
+      moq: product.moq || '',
+      status: product.status || 'Active',
+    });
+    setProductFilePreview(getProductImageUrl(product) || '');
+    setSelectedProduct(product);
+    setShowProductModal(true);
+  };
+  const handleDeleteProduct = (product) => {
+    setSelectedProduct(product);
+    setShowProductDeleteModal(true);
+  };
+  const confirmDeleteProduct = async () => {
+    if (!selectedProduct) return;
+    try {
+      setProductsLoading(true);
+      const response = await fetch(`${API_BASE_URL}/product/${selectedProduct.id}`, {
+        method: 'DELETE',
+        headers: { 'Accept': 'application/json' },
+      });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to delete seller');
+        throw new Error(errorData.message || 'Failed to delete product');
       }
-
-      await fetchSellers();
-      setShowDeleteModal(false);
-      setSelectedSeller(null);
-      setError('');
+      const sellerId = selectedSeller.id;
+      const res = await fetch(`${API_BASE_URL}/product_seller/${sellerId}`, {
+        headers: { 'Accept': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) setSellerProducts(data.data);
+      }
+      setShowProductDeleteModal(false);
+      setSelectedProduct(null);
+      alert('Product deleted successfully!');
     } catch (err) {
-      setError('Error deleting seller: ' + err.message);
-      console.error('Delete error:', err);
+      setProductsError('Error deleting product: ' + err.message);
     } finally {
-      setLoading(false);
+      setProductsLoading(false);
     }
   };
-
-  // Handle form input changes
+  const handleProductInputChange = (e) => {
+    const { name, value } = e.target;
+    setProductFormData(prev => ({ ...prev, [name]: value }));
+  };
+  const handleProductFileChange = (e) => {
+    const { name, files } = e.target;
+    const file = files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setProductsError('File too large. Maximum size is 5MB.');
+      return;
+    }
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      setProductsError('Only JPG, PNG, GIF allowed.');
+      return;
+    }
+    setProductFormData(prev => ({ ...prev, [name]: file }));
+    const reader = new FileReader();
+    reader.onload = (ev) => setProductFilePreview(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+  const resetProductForm = () => {
+    setProductFormData({
+      name: '',
+      detail: '',
+      price: '',
+      moq: '',
+      status: 'Active',
+      f_image: null,
+    });
+    setProductFilePreview('');
+    setProductsError('');
+  };
+  const buildProductFormData = () => {
+    const fd = new FormData();
+    fd.append('name', productFormData.name.trim());
+    fd.append('detail', productFormData.detail.trim());
+    fd.append('price', productFormData.price);
+    fd.append('moq', productFormData.moq);
+    fd.append('status', productFormData.status);
+    fd.append('seller_id', selectedSeller.id);
+    if (productFormData.f_image) fd.append('f_image', productFormData.f_image);
+    return fd;
+  };
+  const handleProductSubmit = async (e) => {
+    e.preventDefault();
+    setProductsLoading(true);
+    setProductsError('');
+    try {
+      if (!productFormData.name.trim()) throw new Error('Name is required');
+      const url = `${API_BASE_URL}/product/${selectedProduct.id}`;
+      const method = 'PATCH';
+      const fd = buildProductFormData();
+      const res = await fetch(url, {
+        method,
+        headers: { 'Accept': 'application/json' },
+        body: fd,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let data;
+        try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+        const msg = data?.message || data?.error || `${method} failed (${res.status})`;
+        throw new Error(msg);
+      }
+      const sellerId = selectedSeller.id;
+      const refreshRes = await fetch(`${API_BASE_URL}/product_seller/${sellerId}`, {
+        headers: { 'Accept': 'application/json' },
+      });
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        if (data.success && Array.isArray(data.data)) setSellerProducts(data.data);
+      }
+      setShowProductModal(false);
+      setSelectedProduct(null);
+      resetProductForm();
+      alert('Product updated successfully!');
+    } catch (err) {
+      setProductsError(err.message || 'Failed to save product');
+    } finally {
+      setProductsLoading(false);
+    }
+  };
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
+    const nextValue = type === 'checkbox' ? (checked ? 1 : 0)
+      : name === 'bank_IFSC_code' ? value.toUpperCase()
+      : value;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? (checked ? 1 : 0) : value
+      [name]: nextValue
     }));
   };
-
-  // Handle file input changes
   const handleFileChange = (e) => {
     const { name, files } = e.target;
-    const file = files[0];
-    
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        setError(`File ${file.name} is too large. Maximum size is 5MB.`);
-        return;
-      }
-
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
-      if (!allowedTypes.includes(file.type)) {
-        setError(`File ${file.name} is not a valid image. Only JPG, PNG, and GIF are allowed.`);
-        return;
-      }
-
-      setFormData(prev => ({
-        ...prev,
-        [name]: file
-      }));
-
+    const file = files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError(`File ${file.name} is too large. Maximum size is 5MB.`);
+      return;
+    }
+    const allowedTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf'
+    ];
+    if (!allowedTypes.includes(file.type)) {
+      setError(`File ${file.name} type not allowed. Only JPG, PNG, GIF, or PDF.`);
+      return;
+    }
+    setFormData(prev => ({ ...prev, [name]: file }));
+    if (file.type.startsWith('image/')) {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        setFilePreviews(prev => ({
-          ...prev,
-          [name]: e.target.result
-        }));
+      reader.onload = (ev) => {
+        setFilePreviews(prev => ({ ...prev, [name]: ev.target.result }));
       };
       reader.readAsDataURL(file);
+    } else {
+      setFilePreviews(prev => ({ ...prev, [name]: '' }));
     }
   };
-
-  // Reset form
   const resetForm = () => {
     setFormData({
       name: '',
@@ -347,7 +943,7 @@ const Seller = () => {
       company_logo: null,
       company_website: '',
       IEC_code: '',
-      annual_turnover: '20-50_lakh',
+      annual_turnover: '20-50 lakh',
       facebook_link: '',
       linkedin_link: '',
       insta_link: '',
@@ -366,7 +962,6 @@ const Seller = () => {
       account_number: '',
       account_type: ''
     });
-    
     setFilePreviews({
       company_logo: '',
       aadhar_front: '',
@@ -376,504 +971,293 @@ const Seller = () => {
       gst_certificate: '',
       cancelled_cheque_photo: ''
     });
-    
     setError('');
   };
-
-  // Handle form submission with multiple strategies
+  const buildFormData = (isEdit = false) => {
+    const fd = new FormData();
+    const sellerPayload = {
+      name: formData.name.trim(),
+      mobile: formData.mobile.trim(),
+      email: formData.email.trim(),
+      status: formData.status,
+      approve_status: formData.approve_status,
+      device_token: formData.device_token,
+      subscription: Number(formData.subscription) || 0,
+    };
+    // Only add subscription_package_id if it has a value
+    if (formData.subscription_package_id) {
+      sellerPayload.subscription_package_id = formData.subscription_package_id;
+    }
+    // Add seller ID for edit
+    if (isEdit && selectedSeller?.seller?.id) {
+      sellerPayload.id = selectedSeller.seller.id;
+    }
+    // Only add password for new sellers or if password is provided during edit
+    if (!isEdit || (isEdit && formData.password)) {
+      sellerPayload.password = formData.password;
+      sellerPayload.password_confirmation = formData.password;
+    }
+    const companyPayload = {
+      company_name: (formData.company_name || '').trim(),
+      company_type: formData.company_type,
+      company_GST_number: (formData.company_GST_number || '').trim(),
+      company_website: (formData.company_website || '').trim(),
+      IEC_code: (formData.IEC_code || '').trim(),
+      annual_turnover: formData.annual_turnover,
+      facebook_link: (formData.facebook_link || '').trim(),
+      linkedin_link: (formData.linkedin_link || '').trim(),
+      insta_link: (formData.insta_link || '').trim(),
+      city: (formData.city || '').trim(),
+      state: (formData.state || '').trim(),
+      pincode: (formData.pincode || '').trim(),
+    };
+    // Add company ID for edit
+    if (isEdit && selectedSeller?.company?.id) {
+      companyPayload.id = selectedSeller.company.id;
+    }
+    const kycPayload = {
+      aadhar_number: (formData.aadhar_number || '').trim(),
+    };
+    // Add KYC ID for edit
+    if (isEdit && selectedSeller?.kyc?.id) {
+      kycPayload.id = selectedSeller.kyc.id;
+    }
+    const bankPayload = {
+      bank_name: (formData.bank_name || '').trim(),
+      bank_IFSC_code: (formData.bank_IFSC_code || '').trim(),
+      account_number: (formData.account_number || '').trim(),
+      account_type: formData.account_type || '',
+    };
+    // Add Bank ID for edit
+    if (isEdit && selectedSeller?.bank?.id) {
+      bankPayload.id = selectedSeller.bank.id;
+    }
+    const appendNested = (prefix, obj) => {
+      console.log(`📝 Processing ${prefix}:`, obj);
+      Object.entries(obj).forEach(([k, v]) => {
+        // Skip undefined, null, and empty strings (except password fields)
+        if (v === undefined || v === null) return;
+        if (v === '' && k !== 'password' && k !== 'password_confirmation') return;
+        // Convert values to proper format
+        let value = v;
+        const originalType = typeof v;
+        if (typeof v === 'number') {
+          value = String(v);
+        } else if (typeof v === 'boolean') {
+          value = v ? '1' : '0';
+        } else if (typeof v === 'object' && v !== null) {
+          // This shouldn't happen with our current structure, but handle it
+          console.error(`❌ Object value detected for ${prefix}[${k}]:`, v, 'Type:', Object.prototype.toString.call(v));
+          return; // Skip objects
+        }
+        console.log(` ✓ ${prefix}[${k}]: [${originalType}] "${value}"`);
+        fd.append(`${prefix}[${k}]`, value);
+      });
+    };
+    appendNested('seller', sellerPayload);
+    appendNested('company', companyPayload);
+    appendNested('kyc', kycPayload);
+    appendNested('bank', bankPayload);
+    // Only append files if they are actual File objects (not null)
+    if (formData.company_logo && formData.company_logo instanceof File) {
+      fd.append('company_logo', formData.company_logo);
+    }
+    if (formData.aadhar_front && formData.aadhar_front instanceof File) {
+      fd.append('aadhar_front', formData.aadhar_front);
+    }
+    if (formData.aadhar_back && formData.aadhar_back instanceof File) {
+      fd.append('aadhar_back', formData.aadhar_back);
+    }
+    if (formData.company_registration && formData.company_registration instanceof File) {
+      fd.append('company_registration', formData.company_registration);
+    }
+    if (formData.company_pan_card && formData.company_pan_card instanceof File) {
+      fd.append('company_pan_card', formData.company_pan_card);
+    }
+    if (formData.gst_certificate && formData.gst_certificate instanceof File) {
+      fd.append('gst_certificate', formData.gst_certificate);
+    }
+    if (formData.cancelled_cheque_photo && formData.cancelled_cheque_photo instanceof File) {
+      fd.append('cancelled_cheque_photo', formData.cancelled_cheque_photo);
+    }
+    return fd;
+  };
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-
     try {
-      // Validate required fields
       if (!formData.name.trim()) throw new Error('Name is required');
       if (!formData.mobile.trim()) throw new Error('Mobile is required');
       if (!formData.email.trim()) throw new Error('Email is required');
-      if (showAddModal && !formData.password) throw new Error('Password is required for new sellers');
-
+      // Password required only for new sellers
+      if (showAddModal && !formData.password) throw new Error('Password is required');
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(formData.email)) throw new Error('Please enter a valid email address');
-
       const mobileRegex = /^[0-9]{10}$/;
       if (!mobileRegex.test(formData.mobile)) throw new Error('Please enter a valid 10-digit mobile number');
-
-      let url = `${API_BASE_URL}/seller`;
-      let method = 'POST';
-
-      if (showEditModal && selectedSeller?.seller?.id) {
-        url = `${API_BASE_URL}/seller/${selectedSeller.seller.id}`;
-        method = 'PATCH';
-      }
-
-      console.log(`🚀 Submitting to ${url} with method ${method}`);
-
-      let response;
-      let success = false;
-
-      // Strategy 1: Try FormData (multipart/form-data)
-      if (!success) {
-        try {
-          console.log('📦 Strategy 1: Trying FormData (multipart/form-data)...');
-          const formDataPayload = new FormData();
-          
-          // Add all text fields
-          formDataPayload.append('name', formData.name.trim());
-          formDataPayload.append('mobile', formData.mobile.trim());
-          formDataPayload.append('email', formData.email.trim());
-          if (formData.password) formDataPayload.append('password', formData.password);
-          formDataPayload.append('status', formData.status);
-          formDataPayload.append('approve_status', formData.approve_status);
-          formDataPayload.append('device_token', formData.device_token);
-          formDataPayload.append('subscription', formData.subscription.toString());
-
-          // Add optional fields only if they have values
-          if (formData.company_name) formDataPayload.append('company_name', formData.company_name.trim());
-          if (formData.company_type) formDataPayload.append('company_type', formData.company_type);
-          if (formData.company_GST_number) formDataPayload.append('company_GST_number', formData.company_GST_number.trim());
-          if (formData.company_website) formDataPayload.append('company_website', formData.company_website.trim());
-          if (formData.IEC_code) formDataPayload.append('IEC_code', formData.IEC_code.trim());
-          if (formData.annual_turnover) formDataPayload.append('annual_turnover', formData.annual_turnover);
-          if (formData.facebook_link) formDataPayload.append('facebook_link', formData.facebook_link.trim());
-          if (formData.linkedin_link) formDataPayload.append('linkedin_link', formData.linkedin_link.trim());
-          if (formData.insta_link) formDataPayload.append('insta_link', formData.insta_link.trim());
-          if (formData.city) formDataPayload.append('city', formData.city.trim());
-          if (formData.state) formDataPayload.append('state', formData.state.trim());
-          if (formData.pincode) formDataPayload.append('pincode', formData.pincode.trim());
-
-          // Add files
-          if (formData.company_logo) formDataPayload.append('company_logo', formData.company_logo);
-          if (formData.aadhar_number) formDataPayload.append('aadhar_number', formData.aadhar_number.trim());
-          if (formData.aadhar_front) formDataPayload.append('aadhar_front', formData.aadhar_front);
-          if (formData.aadhar_back) formDataPayload.append('aadhar_back', formData.aadhar_back);
-          if (formData.company_registration) formDataPayload.append('company_registration', formData.company_registration);
-          if (formData.company_pan_card) formDataPayload.append('company_pan_card', formData.company_pan_card);
-          if (formData.gst_certificate) formDataPayload.append('gst_certificate', formData.gst_certificate);
-          if (formData.bank_name) formDataPayload.append('bank_name', formData.bank_name.trim());
-          if (formData.bank_IFSC_code) formDataPayload.append('bank_IFSC_code', formData.bank_IFSC_code.trim());
-          if (formData.account_number) formDataPayload.append('account_number', formData.account_number.trim());
-          if (formData.account_type) formDataPayload.append('account_type', formData.account_type);
-          if (formData.cancelled_cheque_photo) formDataPayload.append('cancelled_cheque_photo', formData.cancelled_cheque_photo);
-
-          if (debugMode) {
-            console.log('FormData contents:');
-            for (let [key, value] of formDataPayload.entries()) {
-              console.log(`  ${key}:`, typeof value === 'object' && value instanceof File ? `File(${value.name})` : value);
-            }
-          }
-
-          response = await fetch(url, {
-            method: method,
-            body: formDataPayload,
-          });
-
-          if (response.ok) {
-            console.log('✅ FormData strategy succeeded');
-            success = true;
-          } else {
-            const errorText = await response.text();
-            console.log('❌ FormData strategy failed:', response.status, errorText);
-          }
-        } catch (err) {
-          console.log('❌ FormData strategy error:', err.message);
-        }
-      }
-
-      // Strategy 2: Try JSON with nested structure (matching API response format)
-      if (!success) {
-        try {
-          console.log('📦 Strategy 2: Trying JSON with nested structure...');
-          const jsonPayload = {
-            seller: {
-              name: formData.name.trim(),
-              mobile: formData.mobile.trim(),
-              email: formData.email.trim(),
-              password: formData.password || undefined,
-              status: formData.status,
-              approve_status: formData.approve_status,
-              device_token: formData.device_token,
-              subscription: formData.subscription,
-              subscription_package_id: null
-            },
-            company: formData.company_name ? {
-              company_name: formData.company_name.trim(),
-              company_type: formData.company_type,
-              company_GST_number: formData.company_GST_number || '',
-              company_website: formData.company_website || '',
-              IEC_code: formData.IEC_code || '',
-              annual_turnover: formData.annual_turnover,
-              facebook_link: formData.facebook_link || '',
-              linkedin_link: formData.linkedin_link || '',
-              insta_link: formData.insta_link || '',
-              city: formData.city || '',
-              state: formData.state || '',
-              pincode: formData.pincode || ''
-            } : undefined,
-            kyc: formData.aadhar_number ? {
-              aadhar_number: formData.aadhar_number.trim()
-            } : undefined,
-            bank: formData.bank_name ? {
-              bank_name: formData.bank_name.trim(),
-              bank_IFSC_code: formData.bank_IFSC_code || '',
-              account_number: formData.account_number || '',
-              account_type: formData.account_type || ''
-            } : undefined
-          };
-
-          // Remove undefined values
-          Object.keys(jsonPayload).forEach(key => 
-            jsonPayload[key] === undefined && delete jsonPayload[key]
-          );
-
-          if (debugMode) console.log('Nested JSON payload:', JSON.stringify(jsonPayload, null, 2));
-
-          response = await fetch(url, {
-            method: method,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: JSON.stringify(jsonPayload),
-          });
-
-          if (response.ok) {
-            console.log('✅ Nested JSON strategy succeeded');
-            success = true;
-          } else {
-            const errorData = await response.json().catch(() => ({}));
-            console.log('❌ Nested JSON strategy failed:', response.status, errorData);
-          }
-        } catch (err) {
-          console.log('❌ Nested JSON strategy error:', err.message);
-        }
-      }
-
-      // Strategy 3: Try JSON with flat structure
-      if (!success) {
-        try {
-          console.log('📦 Strategy 3: Trying JSON with flat structure...');
-          const flatPayload = {
+      const isEdit = showEditModal && selectedSeller?.seller?.id;
+      const url = isEdit ? `${API_BASE_URL}/seller/${selectedSeller.seller.id}` : `${API_BASE_URL}/seller`;
+      // Determine if any files are selected
+      const hasFiles = (formData.company_logo instanceof File) ||
+                       (formData.aadhar_front instanceof File) ||
+                       (formData.aadhar_back instanceof File) ||
+                       (formData.company_registration instanceof File) ||
+                       (formData.company_pan_card instanceof File) ||
+                       (formData.gst_certificate instanceof File) ||
+                       (formData.cancelled_cheque_photo instanceof File);
+      if (isEdit) {
+        // 1) JSON PATCH for text fields only
+        const payload = {
+          seller: {
+            id: selectedSeller.seller.id,
             name: formData.name.trim(),
             mobile: formData.mobile.trim(),
             email: formData.email.trim(),
-            password: formData.password || undefined,
             status: formData.status,
             approve_status: formData.approve_status,
             device_token: formData.device_token,
-            subscription: formData.subscription,
-            subscription_package_id: null
-          };
-
-          // Add optional fields
-          if (formData.company_name) {
-            Object.assign(flatPayload, {
-              company_name: formData.company_name.trim(),
-              company_type: formData.company_type,
-              company_GST_number: formData.company_GST_number || '',
-              company_website: formData.company_website || '',
-              IEC_code: formData.IEC_code || '',
-              annual_turnover: formData.annual_turnover,
-              facebook_link: formData.facebook_link || '',
-              linkedin_link: formData.linkedin_link || '',
-              insta_link: formData.insta_link || '',
-              city: formData.city || '',
-              state: formData.state || '',
-              pincode: formData.pincode || ''
-            });
+            subscription: Number(formData.subscription) || 0,
+          },
+          company: {
+            id: selectedSeller?.company?.id,
+            company_name: formData.company_name.trim(),
+            company_type: formData.company_type,
+            company_GST_number: formData.company_GST_number.trim(),
+            company_website: formData.company_website.trim(),
+            IEC_code: formData.IEC_code.trim(),
+            annual_turnover: formData.annual_turnover,
+            facebook_link: formData.facebook_link.trim(),
+            linkedin_link: formData.linkedin_link.trim(),
+            insta_link: formData.insta_link.trim(),
+            city: formData.city.trim(),
+            state: formData.state.trim(),
+            pincode: formData.pincode.trim(),
+          },
+          kyc: {
+            id: selectedSeller?.kyc?.id,
+            aadhar_number: formData.aadhar_number.trim(),
+          },
+          bank: {
+            id: selectedSeller?.bank?.id,
+            bank_name: formData.bank_name.trim(),
+            bank_IFSC_code: formData.bank_IFSC_code.trim(),
+            account_number: formData.account_number.trim(),
+            account_type: formData.account_type,
           }
-
-          if (formData.aadhar_number) {
-            flatPayload.aadhar_number = formData.aadhar_number.trim();
+        };
+        if (formData.password) {
+          payload.seller.password = formData.password;
+          payload.seller.password_confirmation = formData.password;
+        }
+        if (formData.subscription_package_id) {
+          payload.seller.subscription_package_id = formData.subscription_package_id;
+        }
+        console.log('🔧 Submitting JSON PATCH first (text fields only)');
+        const resText = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const text1 = await resText.text();
+        let data1; try { data1 = text1 ? JSON.parse(text1) : {}; } catch { data1 = { message: text1 }; }
+        if (!resText.ok) {
+          const fieldErrors = data1?.errors
+            ? Object.entries(data1.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')
+            : '';
+          const msg = [data1?.message || `PATCH failed (${resText.status})`, fieldErrors].filter(Boolean).join('\n');
+          throw new Error(msg);
+        }
+        console.log('✅ Text fields updated');
+        // 2) If files selected, send multipart with ONLY files
+        if (hasFiles) {
+          const fd = new FormData();
+          if (formData.company_logo instanceof File) fd.append('company_logo', formData.company_logo);
+          if (formData.aadhar_front instanceof File) fd.append('aadhar_front', formData.aadhar_front);
+          if (formData.aadhar_back instanceof File) fd.append('aadhar_back', formData.aadhar_back);
+          if (formData.company_registration instanceof File) fd.append('company_registration', formData.company_registration);
+          if (formData.company_pan_card instanceof File) fd.append('company_pan_card', formData.company_pan_card);
+          if (formData.gst_certificate instanceof File) fd.append('gst_certificate', formData.gst_certificate);
+          if (formData.cancelled_cheque_photo instanceof File) fd.append('cancelled_cheque_photo', formData.cancelled_cheque_photo);
+          console.log('🔧 Submitting multipart PATCH for files only');
+          const resFiles = await fetch(url, { method: 'PATCH', headers: { 'Accept': 'application/json' }, body: fd });
+          const text2 = await resFiles.text();
+          let data2; try { data2 = text2 ? JSON.parse(text2) : {}; } catch { data2 = { message: text2 }; }
+          if (!resFiles.ok) {
+            const fieldErrors = data2?.errors
+              ? Object.entries(data2.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')
+              : '';
+            const msg = [data2?.message || `PATCH (files) failed (${resFiles.status})`, fieldErrors].filter(Boolean).join('\n');
+            throw new Error(msg);
           }
-
-          if (formData.bank_name) {
-            Object.assign(flatPayload, {
-              bank_name: formData.bank_name.trim(),
-              bank_IFSC_code: formData.bank_IFSC_code || '',
-              account_number: formData.account_number || '',
-              account_type: formData.account_type || ''
-            });
-          }
-
-          // Remove undefined values
-          Object.keys(flatPayload).forEach(key => 
-            flatPayload[key] === undefined && delete flatPayload[key]
-          );
-
-          if (debugMode) console.log('Flat JSON payload:', JSON.stringify(flatPayload, null, 2));
-
-          response = await fetch(url, {
-            method: method,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: JSON.stringify(flatPayload),
-          });
-
-          if (response.ok) {
-            console.log('✅ Flat JSON strategy succeeded');
-            success = true;
-          } else {
-            const errorData = await response.json().catch(() => ({}));
-            console.log('❌ Flat JSON strategy failed:', response.status, errorData);
-          }
-        } catch (err) {
-          console.log('❌ Flat JSON strategy error:', err.message);
+          console.log('✅ Files updated');
+        }
+      } else {
+        // Creating a new seller: send everything via FormData in one request
+        const body = buildFormData(false);
+        console.log('🔧 Creating new seller with FormData');
+        const resCreate = await fetch(url, { method: 'POST', headers: { 'Accept': 'application/json' }, body });
+        const textCreate = await resCreate.text();
+        let dataCreate; try { dataCreate = textCreate ? JSON.parse(textCreate) : {}; } catch { dataCreate = { message: textCreate }; }
+        if (!resCreate.ok) {
+          const fieldErrors = dataCreate?.errors
+            ? Object.entries(dataCreate.errors).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join('\n')
+            : '';
+          const msg = [dataCreate?.message || `POST failed (${resCreate.status})`, fieldErrors].filter(Boolean).join('\n');
+          throw new Error(msg);
         }
       }
-
-      // Strategy 4: Try minimal required fields only
-      if (!success) {
-        try {
-          console.log('📦 Strategy 4: Trying minimal required fields...');
-          const minimalPayload = {
-            name: formData.name.trim(),
-            mobile: formData.mobile.trim(),
-            email: formData.email.trim(),
-            password: formData.password
-          };
-
-          if (debugMode) console.log('Minimal payload:', JSON.stringify(minimalPayload, null, 2));
-
-          response = await fetch(url, {
-            method: method,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: JSON.stringify(minimalPayload),
-          });
-
-          if (response.ok) {
-            console.log('✅ Minimal strategy succeeded');
-            success = true;
-          } else {
-            const errorData = await response.json().catch(() => ({}));
-            console.log('❌ Minimal strategy failed:', response.status, errorData);
-          }
-        } catch (err) {
-          console.log('❌ Minimal strategy error:', err.message);
-        }
-      }
-
-      // If all strategies failed, throw error
-      if (!success || !response.ok) {
-        let errorMessage = 'All submission strategies failed. ';
-        try {
-          const errorData = await response.json();
-          console.error('❌ Final error response:', errorData);
-          
-          if (errorData.message) {
-            errorMessage = errorData.message;
-          } else if (errorData.error) {
-            errorMessage = errorData.error;
-          } else if (errorData.errors) {
-            if (Array.isArray(errorData.errors)) {
-              errorMessage = errorData.errors.map(err => 
-                typeof err === 'string' ? err : `${err.field}: ${err.message}`
-              ).join(', ');
-            } else if (typeof errorData.errors === 'object') {
-              errorMessage = Object.entries(errorData.errors)
-                .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
-                .join(', ');
-            }
-          }
-          
-          // Add API documentation hint
-          errorMessage += '\n\n💡 Please check the API documentation for required fields.';
-        } catch (parseError) {
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const result = await response.json();
-      console.log('✅ Success response:', result);
-
+      // If we reach here, edit/create succeeded
       await fetchSellers();
       setShowAddModal(false);
       setShowEditModal(false);
       setSelectedSeller(null);
       resetForm();
       setError('');
-      
+      alert(isEdit ? 'Seller updated successfully!' : 'Seller created successfully!');
     } catch (err) {
-      setError(err.message);
-      console.error('❌ Submit error:', err);
+      setError(err.message || 'Failed to save seller');
     } finally {
       setLoading(false);
     }
   };
-
-  // Format date
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-      return new Date(dateString).toLocaleDateString('en-IN', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch {
-      return 'N/A';
-    }
+  const handleSearchChange = (e) => {
+    setSearchTerm(e.target.value);
   };
-
-  // Status badge
-  const StatusBadge = ({ status }) => (
-    <span className={`inline-flex px-2.5 py-0.5 text-xs font-semibold rounded-full ${
-      status === 'Active' 
-        ? 'bg-green-100 text-green-800'
-        : status === 'Inactive'
-        ? 'bg-red-100 text-red-800'
-        : 'bg-gray-100 text-gray-800'
-    }`}>
-      {status || 'Unknown'}
-    </span>
-  );
-
-  // Approve status badge
-  const ApproveStatusBadge = ({ status }) => (
-    <span className={`inline-flex px-2.5 py-0.5 text-xs font-semibold rounded-full ${
-      status === 'Approved' 
-        ? 'bg-green-100 text-green-800'
-        : status === 'Rejected'
-        ? 'bg-red-100 text-red-800'
-        : 'bg-blue-100 text-blue-800'
-    }`}>
-      {status || 'Pending'}
-    </span>
-  );
-
-  // File upload component
-  const FileUpload = ({ name, label, accept = "image/*", preview, required = false }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-2">
-        {label} {required && <span className="text-red-500">*</span>}
-      </label>
-      <div className="flex items-center gap-4">
-        <div className="flex-1">
-          <input
-            type="file"
-            name={name}
-            accept={accept}
-            onChange={handleFileChange}
-            className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
-          />
-          <p className="text-xs text-gray-500 mt-1">Max 5MB • JPG, PNG, GIF</p>
-        </div>
-        {preview && (
-          <img 
-            src={preview}
-            alt="Preview"
-            className="h-16 w-16 rounded object-cover border-2 border-gray-200"
-          />
-        )}
-      </div>
-    </div>
-  );
-
-  // Info field
-  const InfoField = ({ label, value, type = 'text' }) => (
-    <div className="py-2 border-b border-gray-100 last:border-0">
-      <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
-        <span className="text-sm font-medium text-gray-600">{label}</span>
-        <span className="text-sm text-gray-900 sm:text-right break-words">
-          {type === 'date' ? formatDate(value) : (value || 'N/A')}
-        </span>
-      </div>
-    </div>
-  );
-
-  // Image preview
-  const ImagePreview = ({ src, alt, label }) => (
-    <div className="flex flex-col items-center p-3 bg-gray-50 rounded-lg">
-      <span className="text-xs font-medium text-gray-600 mb-2">{label}</span>
-      {src ? (
-        <a href={src} target="_blank" rel="noopener noreferrer">
-          <img 
-            src={src} 
-            alt={alt}
-            className="h-20 w-20 object-cover rounded border-2 border-gray-300 hover:border-blue-500 cursor-pointer transition-all"
-          />
-        </a>
-      ) : (
-        <div className="h-20 w-20 bg-gray-200 rounded border-2 border-gray-300 flex items-center justify-center">
-          <FiImage className="text-gray-400 text-2xl" />
-        </div>
-      )}
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
-      {/* Debug Mode Toggle */}
-      <div className="">
-        <button
-          onClick={() => setDebugMode(!debugMode)}
-          className={` ${
-            debugMode 
-              ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' 
-              : 'bg-gray-100 text-gray-600 border border-gray-300'
-          }`}
-        >
-          {debugMode ? '' : ''}
-        </button>
-      </div>
-
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Seller Management</h1>
-            <p className="text-sm text-gray-600 mt-1">Manage all your seller accounts</p>
+            <p className="text-sm text-gray-600 mt-1">Manage all your seller accounts with subscription details</p>
           </div>
-          
           <div className="flex gap-2 sm:gap-3">
             <button
-              onClick={() => {
-                resetForm();
-                setShowAddModal(true);
-              }}
-              
+              onClick={() => { resetForm(); setShowAddModal(true); }}
               className="flex-1 sm:flex-none bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg flex items-center justify-center gap-2 transition-all shadow-sm hover:shadow-md font-medium"
             >
               <FiPlus className="text-lg" />
               <span className="hidden sm:inline">Add Seller</span>
               <span className="sm:hidden">Add</span>
             </button>
-          
           </div>
         </div>
-
-        {/* Total Sellers Card - Reference Image Style */}
+        {/* Totals */}
         <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Total Sellers</h2>
               <p className="text-3xl font-bold text-gray-900 mt-2">{sellers.length}</p>
-              <div className="flex items-center gap-4 mt-3">
-                <div className="flex items-center gap-1">
-                  <div className="h-2 w-2 bg-green-500 rounded-full"></div>
-                  <span className="text-sm text-gray-600">
-                    Active: {sellers.filter(seller => seller.status === 'Active').length}
-                  </span>
-                </div>
+              <div className="flex items-center gap-4 mt-3 flex-wrap">
                 <div className="flex items-center gap-1">
                   <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
-                  <span className="text-sm text-gray-600">
-                    Approved: {sellers.filter(seller => seller.approve_status === 'Approved').length}
-                  </span>
+                  <span className="text-sm text-gray-600">Approved: {sellers.filter(s => s.approve_status === 'Approved').length}</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <div className="h-2 w-2 bg-orange-500 rounded-full"></div>
-                  <span className="text-sm text-gray-600">
-                    Pending: {sellers.filter(seller => seller.approve_status === 'Pending').length}
-                  </span>
+                  <span className="text-sm text-gray-600">Pending: {sellers.filter(s => s.approve_status === 'Pending').length}</span>
                 </div>
               </div>
             </div>
@@ -882,9 +1266,21 @@ const Seller = () => {
             </div>
           </div>
         </div>
+        {/* Search Bar */}
+        <div className="mt-6">
+          <div className="relative">
+            <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg" />
+            <input
+              type="text"
+              placeholder="Search sellers by ID, name, email, mobile, package, or company..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-sm placeholder-gray-500"
+            />
+          </div>
+        </div>
       </div>
-
-      {/* Error Message */}
+      {/* Error */}
       {error && (
         <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
           <div className="flex items-start">
@@ -892,121 +1288,169 @@ const Seller = () => {
             <div className="flex-1">
               <p className="text-sm text-red-800 font-medium whitespace-pre-line">{error}</p>
             </div>
-            <button 
-              onClick={() => setError('')}
-              className="ml-3 text-red-500 hover:text-red-700"
-            >
+            <button onClick={() => setError('')} className="ml-3 text-red-500 hover:text-red-700">
               <FiX className="text-lg" />
             </button>
           </div>
         </div>
       )}
-
-      {/* Sellers Table */}
+      {/* Products Error */}
+      {productsError && (
+        <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm">
+          <div className="flex items-start">
+            <FiAlertCircle className="text-red-500 mt-0.5 mr-3 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm text-red-800 font-medium whitespace-pre-line">{productsError}</p>
+            </div>
+            <button onClick={() => setProductsError('')} className="ml-3 text-red-500 hover:text-red-700">
+              <FiX className="text-lg" />
+            </button>
+          </div>
+        </div>
+      )}
+      {/* Table */}
       <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
         {loading ? (
           <div className="flex flex-col justify-center items-center p-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
             <p className="mt-4 text-gray-600">Loading sellers...</p>
           </div>
-        ) : sellers.length === 0 ? (
+        ) : filteredSellers.length === 0 ? (
           <div className="text-center py-12">
             <FiUser className="mx-auto text-gray-400 text-5xl mb-4" />
-            <p className="text-gray-600 text-lg">No sellers yet</p>
-            <button
-              onClick={() => {
-                resetForm();
-                setShowAddModal(true);
-              }}
-              className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg inline-flex items-center gap-2 transition-all shadow-sm hover:shadow-md font-medium"
-            >
-              <FiPlus />
-              Add Your First Seller
-            </button>
+            <p className="text-gray-600 text-lg">
+              {searchTerm ? 'No sellers match your search' : 'No sellers yet'}
+            </p>
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="mt-2 text-blue-600 hover:text-blue-800 text-sm underline"
+              >
+                Clear search
+              </button>
+            )}
+            {!searchTerm && (
+              <button
+                onClick={() => { resetForm(); setShowAddModal(true); }}
+                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg inline-flex items-center gap-2 transition-all shadow-sm hover:shadow-md font-medium"
+              >
+                <FiPlus />
+                Add Your First Seller
+              </button>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Seller Info</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Approval</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Subscription</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">RT ID</th>
+                  <th className="w-48 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Seller Info</th>
+                  <th className="w-32 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
+                  <th className="w-28 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Website</th>
+                  <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Approval</th>
+                  <th className="w-40 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Package</th>
+                  <th className="w-32 px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Date</th>
+                  <th className="w-24 px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {sellers.map((seller) => (
+                {filteredSellers.map((seller) => (
                   <tr key={seller.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center">
-                        <div className="h-10 w-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-                          <span className="text-white font-semibold text-sm">
-                            {seller.name?.charAt(0).toUpperCase() || 'U'}
-                          </span>
+                    <td className="px-2 py-3 whitespace-nowrap text-xs font-medium text-gray-900 w-16">rt{seller.id}</td>
+                    <td className="px-2 py-3 w-48">
+                      <div className="flex items-center space-x-2">
+                        <div className="h-8 w-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                          <span className="text-white font-semibold text-xs">{seller.name?.charAt(0).toUpperCase() || 'U'}</span>
                         </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{seller.name || 'N/A'}</div>
-                          <div className="text-sm text-gray-500">{seller.email || 'N/A'}</div>
-                          <div className="text-xs text-gray-400">{seller.mobile || 'N/A'}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-medium text-gray-900 truncate" title={seller.name}>{seller.name || 'N/A'}</div>
+                          <div className="text-xs text-gray-500 truncate" title={seller.email}>{seller.email || 'N/A'}</div>
+                          <div className="text-xs text-gray-400 truncate" title={seller.mobile}>{seller.mobile || 'N/A'}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <StatusBadge status={seller.status} />
+                    <td className="px-2 py-3 whitespace-nowrap w-32">
+                      <div className="text-xs font-medium text-gray-900 truncate" title={seller.company_name}>{seller.company_name || 'N/A'}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <ApproveStatusBadge status={seller.approve_status} />
+                    <td className="px-2 py-3 whitespace-nowrap w-28">
+                      {seller.company_website ? (
+                        <a
+                          href={seller.company_website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:text-blue-800 truncate block max-w-full"
+                          title={seller.company_website}
+                        >
+                          {seller.company_website}
+                        </a>
+                      ) : (
+                        <span className="text-xs text-gray-500">N/A</span>
+                      )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        {seller.subscription ? (
-                          <>
-                            <div className="h-2 w-2 bg-green-500 rounded-full"></div>
-                            <span className="text-sm text-gray-900">Active</span>
-                          </>
-                        ) : (
-                          <>
-                            <div className="h-2 w-2 bg-gray-400 rounded-full"></div>
-                            <span className="text-sm text-gray-500">Inactive</span>
-                          </>
-                        )}
+                    <td className="px-2 py-3 whitespace-nowrap w-24">
+                      <select
+                        value={seller.approve_status || 'Pending'}
+                        onChange={(e) => handleApprovalStatusChange(seller.id, e.target.value)}
+                        className="px-2 py-1 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white w-full"
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="Approved">Approved</option>
+                        <option value="Rejected">Rejected</option>
+                      </select>
+                    </td>
+                    <td className="px-2 py-3 whitespace-nowrap w-40">
+                      {seller.package_name ? (
+                        <div className="flex items-center gap-1">
+                          <div className="h-1.5 w-1.5 bg-green-500 rounded-full"></div>
+                          <div>
+                            <div className="text-xs font-medium text-gray-900 truncate" title={seller.package_name}>{seller.package_name}</div>
+                            <button
+                              onClick={() => handleViewHistory(seller)}
+                              className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 mt-1"
+                            >
+                              <FiClock className="text-xs" />
+                              History
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <div className="h-1.5 w-1.5 bg-gray-400 rounded-full"></div>
+                          <div>
+                            <span className="text-xs text-gray-500">No Sub</span>
+                            <button
+                              onClick={() => handleViewHistory(seller)}
+                              className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 mt-1"
+                            >
+                              <FiClock className="text-xs" />
+                              History
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-2 py-3 whitespace-nowrap w-32">
+                      <div className="flex items-center gap-1">
+                        <FiCalendar className="text-gray-400 text-xs" />
+                        <div className="text-xs">
+                          {seller.package_end_date ? formatSubscriptionEndDate(seller.package_end_date) : <span className="text-gray-400">N/A</span>}
+                        </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {formatDate(seller.created_at)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => handleView(seller.id)}
-                          className="bg-blue-100 hover:bg-blue-200 text-blue-700 p-2 rounded-lg transition-colors"
-                          title="View"
-                        >
-                          <FiEye className="text-sm" />
+                    <td className="px-3 py-3 whitespace-nowrap w-24">
+                      <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => handleView(seller.id)} className="bg-blue-100 hover:bg-blue-200 text-blue-700 p-1.5 rounded transition-colors" title="View">
+                          <FiEye className="text-xs" />
                         </button>
-                        <button
-                          onClick={() => handleEdit(seller.id)}
-                          className="bg-green-100 hover:bg-green-200 text-green-700 p-2 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <FiEdit2 className="text-sm" />
+                        <button onClick={() => handleEdit(seller.id)} className="bg-green-100 hover:bg-green-200 text-green-700 p-1.5 rounded transition-colors" title="Edit">
+                          <FiEdit2 className="text-xs" />
                         </button>
-                        <button
-                          onClick={() => handleDelete(seller)}
-                          className="bg-red-100 hover:bg-red-200 text-red-700 p-2 rounded-lg transition-colors"
-                          title="Delete"
-                        >
-                          <FiTrash2 className="text-sm" />
+                        <button onClick={() => handleDelete(seller)} className="bg-red-100 hover:bg-red-200 text-red-700 p-1.5 rounded transition-colors" title="Delete">
+                          <FiTrash2 className="text-xs" />
                         </button>
-                        <button
-                          onClick={() => handleViewProducts(seller)}
-                          className="bg-purple-100 hover:bg-purple-200 text-purple-700 p-2 rounded-lg transition-colors"
-                          title="Products"
-                        >
-                          <FiPackage className="text-sm" />
+                        <button onClick={() => handleViewProducts(seller)} className="bg-purple-100 hover:bg-purple-200 text-purple-700 p-1.5 rounded transition-colors" title="Products">
+                          <FiPackage className="text-xs" />
                         </button>
                       </div>
                     </td>
@@ -1017,14 +1461,13 @@ const Seller = () => {
           </div>
         )}
       </div>
-
       {sellers.length > 0 && (
         <div className="mt-4 text-sm text-gray-600">
-          Showing {sellers.length} seller{sellers.length !== 1 ? 's' : ''}
+          Showing {filteredSellers.length} of {sellers.length} seller{filteredSellers.length !== 1 ? 's' : ''}
         </div>
       )}
-
-      {/* View Seller Modal */}
+      {/* All modals remain the same as before - View Modal, Add/Edit Modal, Delete Modal, Products Modal, Product Add/Edit Modal, Product Delete Modal, and Package History Modal */}
+      {/* View Modal */}
       {showViewModal && selectedSeller && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl my-8">
@@ -1033,16 +1476,11 @@ const Seller = () => {
                 <FiUser className="text-white" />
                 Seller Details - {selectedSeller.seller?.name}
               </h2>
-              <button
-                onClick={() => setShowViewModal(false)}
-                className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-full transition-colors"
-              >
+              <button onClick={() => setShowViewModal(false)} className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-full transition-colors">
                 <FiX className="text-xl" />
               </button>
             </div>
-
             <div className="p-6 max-h-[70vh] overflow-y-auto space-y-6">
-              {/* Seller Information */}
               <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-5 border border-blue-200">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                   <div className="h-8 w-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -1063,7 +1501,14 @@ const Seller = () => {
                   <div className="py-2 border-b border-gray-100">
                     <div className="flex flex-col sm:flex-row sm:justify-between gap-1">
                       <span className="text-sm font-medium text-gray-600">Approval Status</span>
-                      <ApproveStatusBadge status={selectedSeller.seller?.approve_status} />
+                      <ApproveStatusBadge
+                        status={selectedSeller.seller?.approve_status}
+                        onClick={() => {
+                          const currentStatus = selectedSeller.seller?.approve_status;
+                          const newStatus = currentStatus === 'Approved' ? 'Pending' : 'Approved';
+                          handleApprovalStatusChange(selectedSeller.seller?.id, newStatus);
+                        }}
+                      />
                     </div>
                   </div>
                   <InfoField label="Device Token" value={selectedSeller.seller?.device_token} />
@@ -1072,8 +1517,6 @@ const Seller = () => {
                   <InfoField label="Updated Date" value={selectedSeller.seller?.updated_at} type="date" />
                 </div>
               </div>
-
-              {/* Company Information */}
               {selectedSeller.company && (
                 <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-5 border border-green-200">
                   <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -1088,23 +1531,26 @@ const Seller = () => {
                     <InfoField label="GST Number" value={selectedSeller.company.company_GST_number} />
                     <InfoField label="Website" value={selectedSeller.company.company_website} />
                     <InfoField label="IEC Code" value={selectedSeller.company.IEC_code} />
-                    <InfoField label="Annual Turnover" value={selectedSeller.company.annual_turnover} />
+                    <InfoField
+                      label="Annual Turnover"
+                      value={normalizeAnnualTurnover(selectedSeller.company.annual_turnover)}
+                    />
                     <InfoField label="Facebook" value={selectedSeller.company.facebook_link} />
                     <InfoField label="LinkedIn" value={selectedSeller.company.linkedin_link} />
                     <InfoField label="Instagram" value={selectedSeller.company.insta_link} />
                     <InfoField label="City" value={selectedSeller.company.city} />
                     <InfoField label="State" value={selectedSeller.company.state} />
                     <InfoField label="Pincode" value={selectedSeller.company.pincode} />
-                    
                     {selectedSeller.company.company_logo && (
                       <div className="py-2 border-t border-gray-100 mt-2">
                         <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
                           <span className="text-sm font-medium text-gray-600">Company Logo</span>
-                          <a href={`${API_BASE_URL}${selectedSeller.company.company_logo}`} target="_blank" rel="noopener noreferrer">
-                            <img 
-                              src={`${API_BASE_URL}${selectedSeller.company.company_logo}`}
+                          <a href={toAbsoluteUrl(API_BASE_URL, selectedSeller.company.company_logo)} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={toAbsoluteUrl(API_BASE_URL, selectedSeller.company.company_logo)}
                               alt="Company Logo"
                               className="h-16 w-16 rounded object-cover border-2 border-gray-300 hover:border-green-500 cursor-pointer transition-all"
+                              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = PLACEHOLDER_IMG; }}
                             />
                           </a>
                         </div>
@@ -1113,8 +1559,6 @@ const Seller = () => {
                   </div>
                 </div>
               )}
-
-              {/* KYC Information */}
               {selectedSeller.kyc && (
                 <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-5 border border-purple-200">
                   <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -1125,39 +1569,16 @@ const Seller = () => {
                   </h3>
                   <div className="bg-white rounded-lg p-4">
                     <InfoField label="Aadhar Number" value={selectedSeller.kyc.aadhar_number} />
-                    
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-4">
-                      <ImagePreview 
-                        src={selectedSeller.kyc.aadhar_front ? `${API_BASE_URL}${selectedSeller.kyc.aadhar_front}` : ''}
-                        alt="Aadhar Front"
-                        label="Aadhar Front"
-                      />
-                      <ImagePreview 
-                        src={selectedSeller.kyc.aadhar_back ? `${API_BASE_URL}${selectedSeller.kyc.aadhar_back}` : ''}
-                        alt="Aadhar Back"
-                        label="Aadhar Back"
-                      />
-                      <ImagePreview 
-                        src={selectedSeller.kyc.company_pan_card ? `${API_BASE_URL}${selectedSeller.kyc.company_pan_card}` : ''}
-                        alt="PAN Card"
-                        label="PAN Card"
-                      />
-                      <ImagePreview 
-                        src={selectedSeller.kyc.gst_certificate ? `${API_BASE_URL}${selectedSeller.kyc.gst_certificate}` : ''}
-                        alt="GST Certificate"
-                        label="GST Certificate"
-                      />
-                      <ImagePreview 
-                        src={selectedSeller.kyc.company_registration ? `${API_BASE_URL}${selectedSeller.kyc.company_registration}` : ''}
-                        alt="Registration"
-                        label="Registration"
-                      />
+                      <ImagePreview src={toAbsoluteUrl(API_BASE_URL, selectedSeller.kyc.aadhar_front)} alt="Aadhar Front" label="Aadhar Front" />
+                      <ImagePreview src={toAbsoluteUrl(API_BASE_URL, selectedSeller.kyc.aadhar_back)} alt="Aadhar Back" label="Aadhar Back" />
+                      <ImagePreview src={toAbsoluteUrl(API_BASE_URL, selectedSeller.kyc.company_pan_card)} alt="PAN Card" label="PAN Card" />
+                      <ImagePreview src={toAbsoluteUrl(API_BASE_URL, selectedSeller.kyc.gst_certificate)} alt="GST Certificate" label="GST Certificate" />
+                      <ImagePreview src={toAbsoluteUrl(API_BASE_URL, selectedSeller.kyc.company_registration)} alt="Registration" label="Registration" />
                     </div>
                   </div>
                 </div>
               )}
-
-              {/* Bank Information */}
               {selectedSeller.bank && (
                 <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-5 border border-orange-200">
                   <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -1171,16 +1592,16 @@ const Seller = () => {
                     <InfoField label="IFSC Code" value={selectedSeller.bank.bank_IFSC_code} />
                     <InfoField label="Account Number" value={selectedSeller.bank.account_number} />
                     <InfoField label="Account Type" value={selectedSeller.bank.account_type} />
-                    
                     {selectedSeller.bank.cancelled_cheque_photo && (
                       <div className="py-2 border-t border-gray-100 mt-2">
                         <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
                           <span className="text-sm font-medium text-gray-600">Cancelled Cheque</span>
-                          <a href={`${API_BASE_URL}${selectedSeller.bank.cancelled_cheque_photo}`} target="_blank" rel="noopener noreferrer">
-                            <img 
-                              src={`${API_BASE_URL}${selectedSeller.bank.cancelled_cheque_photo}`}
+                          <a href={toAbsoluteUrl(API_BASE_URL, selectedSeller.bank.cancelled_cheque_photo)} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={toAbsoluteUrl(API_BASE_URL, selectedSeller.bank.cancelled_cheque_photo)}
                               alt="Cancelled Cheque"
                               className="h-16 w-32 object-cover rounded border-2 border-gray-300 hover:border-orange-500 cursor-pointer transition-all"
+                              onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = PLACEHOLDER_IMG; }}
                             />
                           </a>
                         </div>
@@ -1190,22 +1611,9 @@ const Seller = () => {
                 </div>
               )}
             </div>
-
             <div className="flex gap-3 p-6 border-t bg-gray-50 rounded-b-xl">
-              <button
-                onClick={() => setShowViewModal(false)}
-                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2.5 px-4 rounded-lg transition-colors font-medium"
-              >
+              <button onClick={() => setShowViewModal(false)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2.5 px-4 rounded-lg transition-colors font-medium">
                 Close
-              </button>
-              <button
-                onClick={() => {
-                  setShowViewModal(false);
-                  handleEdit(selectedSeller.seller?.id);
-                }}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-lg transition-colors font-medium"
-              >
-                Edit Seller
               </button>
               <button
                 onClick={() => handleViewProducts(selectedSeller.seller)}
@@ -1218,27 +1626,19 @@ const Seller = () => {
           </div>
         </div>
       )}
-
-      {/* Add/Edit Seller Modal */}
+      {/* Add/Edit Modal */}
       {(showAddModal || showEditModal) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl my-8">
             <div className="flex justify-between items-center p-6 border-b bg-gradient-to-r from-blue-600 to-blue-700 rounded-t-xl sticky top-0 z-10">
-              <h2 className="text-xl font-semibold text-white">
-                {showAddModal ? '➕ Add New Seller' : '✏️ Edit Seller'}
-              </h2>
+              <h2 className="text-xl font-semibold text-white">{showAddModal ? '➕ Add New Seller' : '✏️ Edit Seller'}</h2>
               <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  setShowEditModal(false);
-                  resetForm();
-                }}
+                onClick={() => { setShowAddModal(false); setShowEditModal(false); resetForm(); }}
                 className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-full transition-colors"
               >
                 <FiX className="text-xl" />
               </button>
             </div>
-
             <form onSubmit={handleSubmit} className="p-6 max-h-[75vh] overflow-y-auto">
               <div className="space-y-8">
                 {/* Seller Information */}
@@ -1251,107 +1651,23 @@ const Seller = () => {
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Name <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        name="name"
-                        value={formData.name}
-                        onChange={handleInputChange}
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                        placeholder="Enter seller name"
-                      />
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name <span className="text-red-500">*</span></label>
+                      <input type="text" name="name" value={formData.name} onChange={handleInputChange} required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white" placeholder="Enter seller name"/>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Mobile <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="tel"
-                        name="mobile"
-                        value={formData.mobile}
-                        onChange={handleInputChange}
-                        required
-                        maxLength="10"
-                        pattern="[0-9]{10}"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                        placeholder="10-digit mobile number"
-                      />
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Mobile <span className="text-red-500">*</span></label>
+                      <input type="tel" name="mobile" value={formData.mobile} onChange={handleInputChange} required maxLength="10" pattern="[0-9]{10}" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white" placeholder="10-digit mobile number"/>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Email <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="email"
-                        name="email"
-                        value={formData.email}
-                        onChange={handleInputChange}
-                        required
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                        placeholder="seller@example.com"
-                      />
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-500">*</span></label>
+                      <input type="email" name="email" value={formData.email} onChange={handleInputChange} required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white" placeholder="seller@example.com"/>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Password {showAddModal && <span className="text-red-500">*</span>}
-                      </label>
-                      <input
-                        type="password"
-                        name="password"
-                        value={formData.password}
-                        onChange={handleInputChange}
-                        required={showAddModal}
-                        minLength="6"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                        placeholder={showEditModal ? "Leave blank to keep current" : "Min 6 characters"}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                      <select
-                        name="status"
-                        value={formData.status}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                      >
-                        <option value="Active">Active</option>
-                        <option value="Inactive">Inactive</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Approval Status</label>
-                      <select
-                        name="approve_status"
-                        value={formData.approve_status}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                      >
-                        <option value="Pending">Pending</option>
-                        <option value="Approved">Approved</option>
-                        <option value="Rejected">Rejected</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center pt-6">
-                      <input
-                        type="checkbox"
-                        name="subscription"
-                        checked={formData.subscription === 1}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          subscription: e.target.checked ? 1 : 0
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label className="ml-2 block text-sm font-medium text-gray-700">
-                        Subscription Active
-                      </label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Password {showAddModal && <span className="text-red-500">*</span>}</label>
+                      <input type="password" name="password" value={formData.password} onChange={handleInputChange} required={showAddModal} minLength="6" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white" placeholder={showEditModal ? "Leave blank to keep current" : "Min 6 characters"}/>
                     </div>
                   </div>
                 </div>
-
                 {/* Company Information */}
                 <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-5 border border-green-200">
                   <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -1363,14 +1679,7 @@ const Seller = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-                      <input
-                        type="text"
-                        name="company_name"
-                        value={formData.company_name}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                        placeholder="Enter company name"
-                      />
+                      <input type="text" name="company_name" value={formData.company_name} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white" placeholder="Enter company name"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Company Type</label>
@@ -1380,45 +1689,22 @@ const Seller = () => {
                         onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
                       >
-                        <option value="Proprietorship">Proprietorship</option>
-                        <option value="Partnership">Partnership</option>
-                        <option value="LLP">LLP</option>
-                        <option value="Private Limited">Private Limited</option>
-                        <option value="Public Limited">Public Limited</option>
+                        {COMPANY_TYPE_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
                       </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">GST Number</label>
-                      <input
-                        type="text"
-                        name="company_GST_number"
-                        value={formData.company_GST_number}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                        placeholder="22AAAAA0000A1Z5"
-                      />
+                      <input type="text" name="company_GST_number" value={formData.company_GST_number} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white" placeholder="22AAAAA0000A1Z5"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Website</label>
-                      <input
-                        type="url"
-                        name="company_website"
-                        value={formData.company_website}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                        placeholder="https://example.com"
-                      />
+                      <input type="url" name="company_website" value={formData.company_website} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white" placeholder="https://example.com"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">IEC Code</label>
-                      <input
-                        type="text"
-                        name="IEC_code"
-                        value={formData.IEC_code}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                        placeholder="Enter IEC code"
-                      />
+                      <input type="text" name="IEC_code" value={formData.IEC_code} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white" placeholder="Enter IEC code"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Annual Turnover</label>
@@ -1428,94 +1714,43 @@ const Seller = () => {
                         onChange={handleInputChange}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
                       >
-                        <option value="0-5_lakh">0-5 Lakh</option>
-                        <option value="5-10_lakh">5-10 Lakh</option>
-                        <option value="10-20_lakh">10-20 Lakh</option>
-                        <option value="20-50_lakh">20-50 Lakh</option>
-                        <option value="50_lakh-1_crore">50 Lakh - 1 Crore</option>
-                        <option value="1-5_crore">1-5 Crore</option>
-                        <option value="5-10_crore">5-10 Crore</option>
-                        <option value="10+_crore">10+ Crore</option>
+                        <option value="below 20 lakh">below 20 lakh</option>
+                        <option value="20-50 lakh">20-50 lakh</option>
+                        <option value="50-1 cr">50-1 cr</option>
+                        <option value="1-5 cr">1-5 cr</option>
+                        <option value="5-10 cr">5-10 cr</option>
+                        <option value="10-20 cr">10-20 cr</option>
                       </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
-                      <input
-                        type="text"
-                        name="city"
-                        value={formData.city}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                        placeholder="Enter city"
-                      />
+                      <input type="text" name="city" value={formData.city} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white" placeholder="Enter city"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
-                      <input
-                        type="text"
-                        name="state"
-                        value={formData.state}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                        placeholder="Enter state"
-                      />
+                      <input type="text" name="state" value={formData.state} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white" placeholder="Enter state"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Pincode</label>
-                      <input
-                        type="text"
-                        name="pincode"
-                        value={formData.pincode}
-                        onChange={handleInputChange}
-                        maxLength="6"
-                        pattern="[0-9]{6}"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                        placeholder="6-digit pincode"
-                      />
+                      <input type="text" name="pincode" value={formData.pincode} onChange={handleInputChange} maxLength="6" pattern="[0-9]{6}" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white" placeholder="6-digit pincode"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Facebook</label>
-                      <input
-                        type="url"
-                        name="facebook_link"
-                        value={formData.facebook_link}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                        placeholder="Facebook profile URL"
-                      />
+                      <input type="url" name="facebook_link" value={formData.facebook_link} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white" placeholder="Facebook profile URL"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn</label>
-                      <input
-                        type="url"
-                        name="linkedin_link"
-                        value={formData.linkedin_link}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                        placeholder="LinkedIn profile URL"
-                      />
+                      <input type="url" name="linkedin_link" value={formData.linkedin_link} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white" placeholder="LinkedIn profile URL"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Instagram</label>
-                      <input
-                        type="url"
-                        name="insta_link"
-                        value={formData.insta_link}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                        placeholder="Instagram profile URL"
-                      />
+                      <input type="url" name="insta_link" value={formData.insta_link} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white" placeholder="Instagram profile URL"/>
                     </div>
                     <div className="md:col-span-3">
-                      <FileUpload 
-                        name="company_logo"
-                        label="Company Logo"
-                        preview={filePreviews.company_logo}
-                      />
+                      <FileUpload name="company_logo" label="Company Logo" preview={filePreviews.company_logo} />
                     </div>
                   </div>
                 </div>
-
                 {/* KYC Information */}
                 <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-5 border border-purple-200">
                   <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -1539,34 +1774,13 @@ const Seller = () => {
                       />
                     </div>
                     <div></div>
-                    <FileUpload 
-                      name="aadhar_front"
-                      label="Aadhar Front"
-                      preview={filePreviews.aadhar_front}
-                    />
-                    <FileUpload 
-                      name="aadhar_back"
-                      label="Aadhar Back"
-                      preview={filePreviews.aadhar_back}
-                    />
-                    <FileUpload 
-                      name="company_registration"
-                      label="Company Registration"
-                      preview={filePreviews.company_registration}
-                    />
-                    <FileUpload 
-                      name="company_pan_card"
-                      label="Company PAN Card"
-                      preview={filePreviews.company_pan_card}
-                    />
-                    <FileUpload 
-                      name="gst_certificate"
-                      label="GST Certificate"
-                      preview={filePreviews.gst_certificate}
-                    />
+                    <FileUpload name="aadhar_front" label="Aadhar Front" accept="image/*" preview={filePreviews.aadhar_front} />
+                    <FileUpload name="aadhar_back" label="Aadhar Back" accept="image/*" preview={filePreviews.aadhar_back} />
+                    <FileUpload name="gst_certificate" label="GST Certificate" accept="image/*,application/pdf" preview={filePreviews.gst_certificate} />
+                    <FileUpload name="company_registration" label="Company Registration" accept="image/*,application/pdf" preview={filePreviews.company_registration} />
+                    <FileUpload name="company_pan_card" label="Company PAN Card" accept="image/*,application/pdf" preview={filePreviews.company_pan_card} />
                   </div>
                 </div>
-
                 {/* Bank Information */}
                 <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-5 border border-orange-200">
                   <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -1578,47 +1792,19 @@ const Seller = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
-                      <input
-                        type="text"
-                        name="bank_name"
-                        value={formData.bank_name}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
-                        placeholder="Enter bank name"
-                      />
+                      <input type="text" name="bank_name" value={formData.bank_name} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white" placeholder="Enter bank name"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">IFSC Code</label>
-                      <input
-                        type="text"
-                        name="bank_IFSC_code"
-                        value={formData.bank_IFSC_code}
-                        onChange={handleInputChange}
-                        maxLength="11"
-                        pattern="[A-Z]{4}0[A-Z0-9]{6}"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
-                        placeholder="SBIN0001234"
-                      />
+                      <input type="text" name="bank_IFSC_code" value={formData.bank_IFSC_code} onChange={handleInputChange} maxLength="11" pattern="[A-Z]{4}0[A-Z0-9]{6}" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white" placeholder="SBIN0001234"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
-                      <input
-                        type="text"
-                        name="account_number"
-                        value={formData.account_number}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
-                        placeholder="Enter account number"
-                      />
+                      <input type="text" name="account_number" value={formData.account_number} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white" placeholder="Enter account number"/>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Account Type</label>
-                      <select
-                        name="account_type"
-                        value={formData.account_type}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white"
-                      >
+                      <select name="account_type" value={formData.account_type} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white">
                         <option value="">Select Type</option>
                         <option value="Savings">Savings</option>
                         <option value="Current">Current</option>
@@ -1626,24 +1812,15 @@ const Seller = () => {
                       </select>
                     </div>
                     <div className="md:col-span-2">
-                      <FileUpload 
-                        name="cancelled_cheque_photo"
-                        label="Cancelled Cheque Photo"
-                        preview={filePreviews.cancelled_cheque_photo}
-                      />
+                      <FileUpload name="cancelled_cheque_photo" label="Cancelled Cheque Photo" accept="image/*,application/pdf" preview={filePreviews.cancelled_cheque_photo} />
                     </div>
                   </div>
                 </div>
               </div>
-
               <div className="flex gap-3 mt-8 pt-6 border-t sticky bottom-0 bg-white">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowAddModal(false);
-                    setShowEditModal(false);
-                    resetForm();
-                  }}
+                  onClick={() => { setShowAddModal(false); setShowEditModal(false); resetForm(); }}
                   className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-4 rounded-lg transition-colors font-medium"
                 >
                   Cancel
@@ -1656,7 +1833,7 @@ const Seller = () => {
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                      Saving...
+                      {showAddModal ? 'Creating...' : 'Updating...'}
                     </span>
                   ) : (
                     showAddModal ? '✓ Create Seller' : '✓ Update Seller'
@@ -1667,7 +1844,6 @@ const Seller = () => {
           </div>
         </div>
       )}
-
       {/* Delete Confirmation Modal */}
       {showDeleteModal && selectedSeller && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -1680,15 +1856,11 @@ const Seller = () => {
                 <h3 className="text-xl font-semibold text-gray-800">Delete Seller</h3>
               </div>
               <p className="text-gray-600 mb-6 leading-relaxed">
-                Are you sure you want to delete <strong className="text-gray-900">{selectedSeller.name}</strong>? 
-                This action cannot be undone and will permanently remove all seller data.
+                Are you sure you want to delete <strong className="text-gray-900">{selectedSeller.name || selectedSeller.seller?.name}</strong>? This action cannot be undone.
               </p>
               <div className="flex gap-3">
                 <button
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setSelectedSeller(null);
-                  }}
+                  onClick={() => { setShowDeleteModal(false); setSelectedSeller(null); }}
                   className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2.5 px-4 rounded-lg transition-colors font-medium"
                 >
                   Cancel
@@ -1712,31 +1884,37 @@ const Seller = () => {
           </div>
         </div>
       )}
-
       {/* Products Modal */}
       {showProductsModal && selectedSeller && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
             <div className="flex justify-between items-center p-6 border-b bg-gradient-to-r from-purple-600 to-purple-700">
               <h2 className="text-xl font-semibold text-white flex items-center gap-2">
                 <FiPackage className="text-white" />
-                Products - {selectedSeller.name}
+                Products - {selectedSeller.name || selectedSeller.seller?.name}
+                <span className="text-sm font-normal bg-white bg-opacity-20 px-2 py-1 rounded">
+                  {sellerProducts.length} product{sellerProducts.length !== 1 ? 's' : ''}
+                </span>
               </h2>
-              <button
-                onClick={() => {
-                  setShowProductsModal(false);
-                  setSelectedSeller(null);
-                  setSellerProducts([]);
-                }}
-                className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-full transition-colors"
-              >
-                <FiX className="text-xl" />
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleViewProducts(selectedSeller)}
+                  className="bg-white hover:bg-gray-100 text-gray-700 px-3 py-2 rounded-lg transition-colors flex items-center gap-1"
+                  title="Refresh Products"
+                >
+                  <FiRefreshCw className="text-sm" />
+                </button>
+                <button
+                  onClick={() => { setShowProductsModal(false); setSelectedSeller(null); setSellerProducts([]); }}
+                  className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-full transition-colors"
+                >
+                  <FiX className="text-xl" />
+                </button>
+              </div>
             </div>
-
             <div className="flex-1 overflow-y-auto p-6">
               {productsLoading ? (
-                <div className="flex flex-col items-center justify-center py-12">
+                <div className="">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mb-4"></div>
                   <p className="text-gray-600">Loading products...</p>
                 </div>
@@ -1750,51 +1928,413 @@ const Seller = () => {
                   <p className="text-gray-600 text-lg">No products found for this seller</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {sellerProducts.map((product) => (
-                    <div key={product.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
-                      {product.product_images && product.product_images.length > 0 ? (
-                        <img
-                          src={`${API_BASE_URL}${product.product_images[0]}`}
-                          alt={product.product_name}
-                          className="w-full h-48 object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
-                          <FiPackage className="text-gray-400 text-4xl" />
-                        </div>
-                      )}
-                      <div className="p-4">
-                        <h4 className="font-semibold text-gray-900 mb-2 truncate" title={product.product_name}>
-                          {product.product_name}
-                        </h4>
-                        <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                          {product.product_description || 'No description'}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-lg font-bold text-purple-600">
-                            ₹{product.price || 'N/A'}
-                          </span>
-                          {product.stock && (
-                            <span className="text-sm text-gray-500">
-                              Stock: {product.stock}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto bg-white rounded-lg border border-gray-200">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">S.NO</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IMAGE</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRODUCT NAME</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DETAILS</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PRICE</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MOQ</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">STATUS</th>
+                        <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">ACTIONS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {sellerProducts.map((product, index) => (
+                        <tr key={product.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {index + 1}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <ProductImage product={product} className="h-12 w-12" />
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm font-medium text-gray-900 max-w-xs truncate" title={product.name}>
+                              {product.name || 'N/A'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm text-gray-500 max-w-xs truncate" title={product.detail}>
+                              {product.detail || 'No description'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-semibold text-purple-600">
+                              {product.price ? `₹${product.price}` : 'N/A'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {product.moq || 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <StatusBadge status={product.status} />
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => handleEditProduct(product)}
+                                className="bg-green-100 hover:bg-green-200 text-green-700 p-2 rounded-lg transition-colors"
+                                title="Edit Product"
+                              >
+                                <FiEdit2 className="text-sm" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteProduct(product)}
+                                className="bg-red-100 hover:bg-red-200 text-red-700 p-2 rounded-lg transition-colors"
+                                title="Delete Product"
+                              >
+                                <FiTrash2 className="text-sm" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
-
             <div className="p-6 border-t bg-gray-50">
               <button
-                onClick={() => {
-                  setShowProductsModal(false);
-                  setSelectedSeller(null);
-                  setSellerProducts([]);
-                }}
+                onClick={() => { setShowProductsModal(false); setSelectedSeller(null); setSellerProducts([]); }}
+                className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 py-2.5 px-4 rounded-lg transition-colors font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Product Add/Edit Modal */}
+      {showProductModal && selectedSeller && selectedProduct && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md my-8">
+            <div className="flex justify-between items-center p-6 border-b bg-gradient-to-r from-purple-600 to-purple-700 rounded-t-xl">
+              <h2 className="text-xl font-semibold text-white">
+                Edit Product
+              </h2>
+              <button
+                onClick={() => { setShowProductModal(false); resetProductForm(); }}
+                className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-full transition-colors"
+              >
+                <FiX className="text-xl" />
+              </button>
+            </div>
+            <form onSubmit={handleProductSubmit} className="p-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Seller</label>
+                  <input
+                    type="text"
+                    value={selectedSeller.name}
+                    readOnly
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name <span className="text-red-500">*</span></label>
+                  <input
+                    type="text"
+                    name="name"
+                    value={productFormData.name}
+                    onChange={handleProductInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <textarea
+                    name="detail"
+                    value={productFormData.detail}
+                    onChange={handleProductInputChange}
+                    rows="3"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
+                    <input
+                      type="number"
+                      name="price"
+                      value={productFormData.price}
+                      onChange={handleProductInputChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      placeholder="e.g., 150"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">MOQ</label>
+                    <input
+                      type="number"
+                      name="moq"
+                      value={productFormData.moq}
+                      onChange={handleProductInputChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      placeholder="e.g., 1"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                  <select name="status" value={productFormData.status} onChange={handleProductInputChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500">
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+                <div>
+                  <ProductFileUpload name="f_image" label="Featured Image" preview={productFilePreview} />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6 pt-4 border-t">
+                <button
+                  type="button"
+                  onClick={() => { setShowProductModal(false); resetProductForm(); }}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2.5 px-4 rounded-lg transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={productsLoading}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2.5 px-4 rounded-lg transition-colors font-medium disabled:opacity-50"
+                >
+                  {productsLoading ? 'Saving...' : 'Update'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Product Delete Confirmation Modal */}
+      {showProductDeleteModal && selectedProduct && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <FiTrash2 className="text-red-600 text-2xl" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-800">Delete Product</h3>
+              </div>
+              <p className="text-gray-600 mb-6 leading-relaxed">
+                Are you sure you want to delete <strong className="text-gray-900">{selectedProduct.name}</strong>? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowProductDeleteModal(false); setSelectedProduct(null); }}
+                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-2.5 px-4 rounded-lg transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteProduct}
+                  disabled={productsLoading}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2.5 px-4 rounded-lg transition-colors font-medium disabled:opacity-50"
+                >
+                  {productsLoading ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Package History Modal */}
+      {showHistoryModal && selectedSeller && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center p-6 border-b bg-gradient-to-r from-orange-600 to-orange-700">
+              <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                <FiClock className="text-white" />
+                Subscription Package History - {selectedSeller.name || selectedSeller.seller?.name}
+                <span className="text-sm font-normal bg-white bg-opacity-20 px-2 py-1 rounded">
+                  {packageHistory.length} record{packageHistory.length !== 1 ? 's' : ''}
+                </span>
+              </h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleViewHistory(selectedSeller)}
+                  className="bg-white hover:bg-gray-100 text-gray-700 px-3 py-2 rounded-lg transition-colors flex items-center gap-1"
+                  title="Refresh History"
+                >
+                  <FiRefreshCw className="text-sm" />
+                </button>
+                <button
+                  onClick={() => { setShowHistoryModal(false); setSelectedSeller(null); setPackageHistory([]); setHistoryError(''); }}
+                  className="text-white hover:bg-white hover:bg-opacity-20 p-2 rounded-full transition-colors"
+                >
+                  <FiX className="text-xl" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6">
+              {historyLoading ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mb-4"></div>
+                  <p className="text-gray-600">Loading package history...</p>
+                </div>
+              ) : historyError ? (
+                <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
+                  <div className="flex items-start">
+                    <FiAlertCircle className="text-red-500 mt-0.5 mr-3 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-red-800 font-medium">Error loading package history</p>
+                      <p className="text-red-600 text-sm mt-1">{historyError}</p>
+                      <button
+                        onClick={() => handleViewHistory(selectedSeller)}
+                        className="mt-3 bg-red-100 hover:bg-red-200 text-red-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : packageHistory.length === 0 ? (
+                <div className="text-center py-12">
+                  <FiClock className="mx-auto text-gray-400 text-5xl mb-4" />
+                  <p className="text-gray-600 text-lg">No subscription history found for this seller</p>
+                  <p className="text-gray-500 text-sm mt-2">Package purchases will appear here</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="relative">
+                    {packageHistory.map((history, index) => {
+                      const packageName = history.package_name || history.packageName || history.package?.name || 'Package';
+                      const packageDesc = history.package_description || history.packageDescription || history.description || history.package?.description || '';
+                      const status = history.status || 'Unknown';
+                      const price = history.price || history.package_price || history.packagePrice || history.amount || history.package?.price || null;
+                      const startDate = history.start_date || history.startDate || history.package_start_date || history.created_at || null;
+                      const endDate = history.end_date || history.endDate || history.package_end_date || history.expiry_date || null;
+                      const paymentMethod = history.payment_method || history.paymentMethod || history.payment_mode || null;
+                      const transactionId = history.transaction_id || history.transactionId || history.payment_id || null;
+                      const notes = history.notes || history.remarks || null;
+       
+                      return (
+                        <div key={history.id || index} className="relative pb-8 last:pb-0">
+                          {index !== packageHistory.length - 1 && (
+                            <span className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true"></span>
+                          )}
+        
+                          <div className="relative flex items-start space-x-3">
+                            <div className="relative">
+                              <div className={`h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white ${
+                                status === 'Active' || status === 'active' ? 'bg-green-500' :
+                                status === 'Expired' || status === 'expired' ? 'bg-red-500' :
+                                'bg-gray-400'
+                              }`}>
+                                <FiPackage className="h-4 w-4 text-white" />
+                              </div>
+                            </div>
+          
+                            <div className="min-w-0 flex-1">
+                              <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-lg p-5 border border-orange-200 shadow-sm hover:shadow-md transition-shadow">
+                                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+                                  <div>
+                                    <h4 className="text-lg font-semibold text-gray-900 flex items-center gap-2 flex-wrap">
+                                      {packageName}
+                                      <HistoryStatusBadge status={status} />
+                                    </h4>
+                                    {packageDesc && (
+                                      <p className="text-sm text-gray-600 mt-1">{packageDesc}</p>
+                                    )}
+                                  </div>
+                                  {price && (
+                                    <div className="bg-white px-4 py-2 rounded-lg border border-orange-300 shadow-sm">
+                                      <div className="text-xs text-gray-500">Price</div>
+                                      <div className="text-xl font-bold text-orange-600">₹{price}</div>
+                                    </div>
+                                  )}
+                                </div>
+              
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                                  {startDate && (
+                                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                                        <FiCalendar className="text-blue-500" />
+                                        Start Date
+                                      </div>
+                                      <div className="text-sm font-medium text-gray-900">
+                                        {formatHistoryDate(startDate)}
+                                      </div>
+                                    </div>
+                                  )}
+                
+                                  {endDate && (
+                                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                                        <FiCalendar className="text-red-500" />
+                                        End Date
+                                      </div>
+                                      <div className="text-sm font-medium text-gray-900">
+                                        {formatHistoryDate(endDate)}
+                                      </div>
+                                    </div>
+                                  )}
+                
+                                  {startDate && endDate && (
+                                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                                        <FiClock className="text-purple-500" />
+                                        Duration
+                                      </div>
+                                      <div className="text-sm font-medium text-gray-900">
+                                        {calculateDuration(startDate, endDate)}
+                                      </div>
+                                    </div>
+                                  )}
+                
+                                  {paymentMethod && (
+                                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                      <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                                        <FiCreditCard className="text-green-500" />
+                                        Payment
+                                      </div>
+                                      <div className="text-sm font-medium text-gray-900">
+                                        {paymentMethod}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+              
+                                {(transactionId || notes) && (
+                                  <div className="mt-4 pt-4 border-t border-orange-200">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                      {transactionId && (
+                                        <div>
+                                          <span className="text-xs text-gray-500">Transaction ID:</span>
+                                          <div className="text-sm font-mono text-gray-700 mt-1">
+                                            {transactionId}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {notes && (
+                                        <div>
+                                          <span className="text-xs text-gray-500">Notes:</span>
+                                          <div className="text-sm text-gray-700 mt-1">
+                                            {notes}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t bg-gray-50">
+              <button
+                onClick={() => { setShowHistoryModal(false); setSelectedSeller(null); setPackageHistory([]); setHistoryError(''); }}
                 className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 py-2.5 px-4 rounded-lg transition-colors font-medium"
               >
                 Close
@@ -1806,5 +2346,4 @@ const Seller = () => {
     </div>
   );
 };
-
 export default Seller;

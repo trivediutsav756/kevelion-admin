@@ -1,115 +1,6 @@
-// // App.js
-// import React, { useState, useEffect } from 'react';
-// import Login from './components/Login';
-// import Sidebar from './components/Sidebar';
-// import Dashboard from './components/Dashboard';
-// import Categories from './components/Categories';
-// import SubCategories from './components/SubCategories';
-// import Products from './components/Products';
-// import Sellers from './components/Sellers';
-// import Buyer from './components/Buyer';
-// import OrderDashboard from './components/Order';
-
-// function App() {
-//   const [isAuthenticated, setIsAuthenticated] = useState(false);
-//   const [user, setUser] = useState(null);
-//   const [activeTab, setActiveTab] = useState('dashboard');
-//   const [sidebarOpen, setSidebarOpen] = useState(false);
-
-//   // Check for existing authentication on app load
-//   useEffect(() => {
-//     const savedAuth = localStorage.getItem('retaillian_auth');
-//     const savedUser = localStorage.getItem('retaillian_user');
-    
-//     if (savedAuth === 'true' && savedUser) {
-//       setIsAuthenticated(true);
-//       setUser(JSON.parse(savedUser));
-//     }
-//   }, []);
-
-//   const handleLogin = (userData) => {
-//     setIsAuthenticated(true);
-//     setUser(userData);
-//     // Save authentication state to localStorage
-//     localStorage.setItem('retaillian_auth', 'true');
-//     localStorage.setItem('retaillian_user', JSON.stringify(userData));
-//   };
-
-//   const handleLogout = () => {
-//     setIsAuthenticated(false);
-//     setUser(null);
-//     setActiveTab('dashboard'); // Reset to dashboard
-//     setSidebarOpen(false); // Close sidebar
-//     // Clear authentication state from localStorage
-//     localStorage.removeItem('retaillian_auth');
-//     localStorage.removeItem('retaillian_user');
-//   };
-
-//   const renderContent = () => {
-//     switch (activeTab) {
-//       case 'dashboard':
-//         return <Dashboard />;
-//       case 'categories':
-//         return <Categories />;
-//       case 'subcategories':
-//         return <SubCategories />;
-//       case 'products':
-//         return <Products />;
-//       case 'sellers': // ✅ Change 'vendors' to 'sellers'
-//         return <Sellers />;
-//       case 'buyers':
-//         return <Buyer />;
-//       case 'orders':
-//         return <OrderDashboard />;
-//       default:
-//         return <Dashboard />;
-//     }
-//   };
-
-//   // Show login screen if not authenticated
-//   if (!isAuthenticated) {
-//     return <Login onLogin={handleLogin} />;
-//   }
-
-//   // Show dashboard if authenticated
-//   return (
-//     <div className="flex h-screen bg-gray-50">
-//       <Sidebar 
-//         activeTab={activeTab} 
-//         setActiveTab={setActiveTab}
-//         sidebarOpen={sidebarOpen}
-//         setSidebarOpen={setSidebarOpen}
-//         user={user}
-//         onLogout={handleLogout}
-//       />
-      
-//       {/* Main Content */}
-//       <div className="flex-1 flex flex-col overflow-hidden">
-//         {/* Mobile Header */}
-//         <div className="lg:hidden bg-white border-b border-gray-200 p-4">
-//           <button
-//             onClick={() => setSidebarOpen(!sidebarOpen)}
-//             className="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-//           >
-//             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-//               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-//             </svg>
-//           </button>
-//         </div>
-
-//         {/* Main Content Area */}
-//         <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 lg:p-6">
-//           {renderContent()}
-//         </main>
-//       </div>
-//     </div>
-//   );
-// }
-
-// export default App;
-
 // App.jsx
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './components/Login';
  
 // Admin Components
@@ -121,15 +12,9 @@ import AdminProducts from './components/Products';
 import Sellers from './components/Sellers';
 import Buyer from './components/Buyer';
 import AdminOrderDashboard from './components/Order';
- 
-// Seller Components
-import SellerSidebar from './seller/Sidebar';
-import SellerDashboard from './seller/Dashboard';
-import SellerCategory from './seller/Category';
-import SellerSubcategory from './seller/Subcategory';
-import SellerProducts from './seller/Products';
-import OrderManagement from './seller/OrderManagement'; // ✅ Added Order Management
-import Seller from './components/Sellers';
+import Subscription from './components/Subscription'; // ✅ Added Subscription import
+import Slider from './components/Slider';
+
 
 // Uncomment these when you create the components
 // import BuyerDashboard from './seller/BuyerDashboard';
@@ -182,7 +67,7 @@ function App() {
   const renderAdminContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <AdminDashboard />;
+        return <AdminDashboard onNavigate={(tab) => setActiveTab(tab)} />;
       case 'categories':
         return <Categories />;
       case 'subcategories':
@@ -195,6 +80,10 @@ function App() {
         return <Buyer />;
       case 'orders':
         return <AdminOrderDashboard />;
+      case 'subscriptions': // ✅ Added subscriptions case
+        return <Subscription />;
+        case 'sliders':
+          return <Slider />
       default:
         return <AdminDashboard />;
     }
@@ -203,7 +92,7 @@ function App() {
   const renderSellerContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <SellerDashboard />;
+        return <SellerDashboard onNavigate={(tab) => setActiveTab(tab)} />;
       case 'category':
         return <SellerCategory />;
       case 'subcategory':

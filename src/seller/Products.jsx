@@ -1,4 +1,3 @@
-// components/Products.jsx
 import React, { useState, useEffect } from 'react';
 
 const Products = () => {
@@ -16,7 +15,6 @@ const Products = () => {
   const [formErrors, setFormErrors] = useState({});
   const [submitLoading, setSubmitLoading] = useState(false);
   const [viewLoading, setViewLoading] = useState(false);
-  
   // Bulk Upload States
   const [bulkUploadLoading, setBulkUploadLoading] = useState(false);
   const [excelFile, setExcelFile] = useState(null);
@@ -24,7 +22,6 @@ const Products = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploadResult, setUploadResult] = useState(null);
-  
   const [imageFiles, setImageFiles] = useState({
     f_image: null,
     image_2: null,
@@ -32,7 +29,6 @@ const Products = () => {
     image_4: null,
     product_catalogue: null
   });
-
   const [imagePreviews, setImagePreviews] = useState({
     f_image: null,
     image_2: null,
@@ -40,7 +36,6 @@ const Products = () => {
     image_4: null,
     product_catalogue: null
   });
-
   const [newProduct, setNewProduct] = useState({
     name: '',
     sku: '',
@@ -55,43 +50,36 @@ const Products = () => {
     made_in: '',
     specification: '',
     warranty: '',
-    sellerid: '', 
-    highlight: 'No'
+    seller_id: ''
   });
-
   const BASE_URL = 'http://rettalion.apxfarms.com';
 
   // ✅ VALIDATE UPLOAD FILES
   const validateUploadFiles = () => {
     const errors = [];
-    
     if (!excelFile) {
       errors.push('❌ Excel file is required');
       return errors;
     }
-    
     const excelExt = excelFile.name.split('.').pop().toLowerCase();
     if (!['xlsx', 'xls', 'csv'].includes(excelExt)) {
       errors.push(`❌ Invalid Excel file extension: .${excelExt} (allowed: .xlsx, .xls, .csv)`);
     }
-    
     const excelSizeMB = excelFile.size / 1024 / 1024;
     if (excelFile.size > 10 * 1024 * 1024) {
       errors.push(`❌ Excel file too large: ${excelSizeMB.toFixed(2)} MB (max 10 MB)`);
     }
-    
     if (zipFile) {
       const zipExt = zipFile.name.split('.').pop().toLowerCase();
       if (zipExt !== 'zip') {
         errors.push(`❌ Invalid ZIP file extension: .${zipExt} (must be .zip)`);
       }
-      
+ 
       const zipSizeMB = zipFile.size / 1024 / 1024;
       if (zipFile.size > 100 * 1024 * 1024) {
         errors.push(`❌ ZIP file too large: ${zipSizeMB.toFixed(2)} MB (max 100 MB)`);
       }
     }
-    
     return errors;
   };
 
@@ -103,14 +91,12 @@ const Products = () => {
       console.error('Validation errors:', validationErrors);
       return;
     }
-
     console.log('🚀 Starting bulk upload process...');
     console.log('📊 Excel file:', {
       name: excelFile.name,
       size: `${(excelFile.size / 1024).toFixed(2)} KB`,
       type: excelFile.type
     });
-    
     if (zipFile) {
       console.log('🗂️ ZIP file:', {
         name: zipFile.name,
@@ -118,41 +104,36 @@ const Products = () => {
         type: zipFile.type
       });
     }
-
     setBulkUploadLoading(true);
     setUploadProgress(0);
     setUploadStatus('Preparing upload...');
     setUploadResult(null);
-
     try {
       const formData = new FormData();
       formData.append('excel', excelFile, excelFile.name);
-      
+ 
       if (zipFile) {
-        formData.append('images', zipFile, zipFile.name);
+        formData.append('zip', zipFile, zipFile.name);
         setUploadStatus('📤 Uploading Excel and Images...');
       } else {
         setUploadStatus('📤 Uploading Excel file...');
       }
-
       console.log('📦 FormData contents:');
       for (let pair of formData.entries()) {
         if (pair[1] instanceof File) {
-          console.log(`  - ${pair[0]}: [File] ${pair[1].name} (${(pair[1].size / 1024).toFixed(2)} KB)`);
+          console.log(` - ${pair[0]}: [File] ${pair[1].name} (${(pair[1].size / 1024).toFixed(2)} KB)`);
         } else {
-          console.log(`  - ${pair[0]}:`, pair[1]);
+          console.log(` - ${pair[0]}:`, pair[1]);
         }
       }
-
       await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable) {
             const percentComplete = Math.round((e.loaded / e.total) * 100);
             setUploadProgress(percentComplete);
             console.log(`📊 Upload progress: ${percentComplete}% (${e.loaded}/${e.total} bytes)`);
-            
+       
             if (percentComplete < 100) {
               setUploadStatus(`📤 Uploading... ${percentComplete}%`);
             } else {
@@ -160,18 +141,16 @@ const Products = () => {
             }
           }
         });
-
         xhr.addEventListener('load', () => {
           console.log('📡 Response received');
-          console.log('  Status:', xhr.status, xhr.statusText);
-          console.log('  Headers:', xhr.getAllResponseHeaders());
-          console.log('  Response text:', xhr.responseText);
-
+          console.log(' Status:', xhr.status, xhr.statusText);
+          console.log(' Headers:', xhr.getAllResponseHeaders());
+          console.log(' Response text:', xhr.responseText);
           if (xhr.status >= 200 && xhr.status < 300) {
             try {
               const response = JSON.parse(xhr.responseText);
               console.log('✅ Parsed response:', response);
-              
+         
               setUploadProgress(100);
               setUploadStatus('✅ Upload successful!');
               setUploadResult({
@@ -179,60 +158,56 @@ const Products = () => {
                 message: response.message || 'Products uploaded successfully!',
                 data: response
               });
-
-              const totalProducts = response.count 
-                || response.total 
+              const totalProducts = response.count
+                || response.total
                 || response.products_count
-                || (response.products?.length) 
+                || (response.products?.length)
                 || (response.data?.length)
                 || 'N/A';
-
               setTimeout(async () => {
                 await fetchProducts();
                 alert(`✅ Success!\n\n${response.message || 'Products uploaded successfully!'}\n\nTotal Products: ${totalProducts}`);
                 setShowBulkUploadModal(false);
                 resetBulkUpload();
               }, 1500);
-
               resolve(response);
             } catch (parseError) {
               console.error('⚠️ JSON parse error:', parseError);
               console.error('📄 Response text:', xhr.responseText);
-              
+         
               setUploadProgress(100);
               setUploadStatus('✅ Upload completed!');
               setUploadResult({
                 success: true,
                 message: 'Upload completed successfully!'
               });
-              
+         
               setTimeout(async () => {
                 await fetchProducts();
                 alert('✅ Products uploaded successfully!');
                 setShowBulkUploadModal(false);
                 resetBulkUpload();
               }, 1500);
-              
+         
               resolve({ success: true });
             }
           } else {
             console.error('❌ HTTP Error:', xhr.status, xhr.statusText);
-            
+       
             let errorMessage = `HTTP Error ${xhr.status}: ${xhr.statusText}`;
             let errorDetails = null;
-
             try {
               const errorResponse = JSON.parse(xhr.responseText);
               console.error('❌ Error response:', errorResponse);
-              
-              errorMessage = errorResponse.error 
-                || errorResponse.message 
+         
+              errorMessage = errorResponse.error
+                || errorResponse.message
                 || errorResponse.details
                 || errorResponse.msg
                 || errorMessage;
-              
+         
               errorDetails = errorResponse;
-              
+         
               if (errorResponse.details) {
                 console.error('📋 Error details:', errorResponse.details);
               }
@@ -243,26 +218,23 @@ const Products = () => {
               console.error('⚠️ Could not parse error response as JSON');
               errorMessage = xhr.responseText.substring(0, 500) || errorMessage;
             }
-
             setUploadStatus('❌ Upload failed');
             setUploadResult({
               success: false,
               message: errorMessage,
               details: errorDetails
             });
-
             const displayError = `❌ Upload Failed!\n\nStatus Code: ${xhr.status}\n\n${errorMessage}\n\nCheck browser console (F12) for details.`;
             alert(displayError);
             setBulkUploadLoading(false);
-            
+       
             reject(new Error(errorMessage));
           }
         });
-
         xhr.addEventListener('error', (e) => {
           console.error('❌ Network error occurred:', e);
           const errorMsg = 'Network error occurred. Please check your internet connection and try again.';
-          
+     
           setUploadStatus('❌ Network error');
           setUploadResult({
             success: false,
@@ -272,7 +244,6 @@ const Products = () => {
           setBulkUploadLoading(false);
           reject(new Error(errorMsg));
         });
-
         xhr.addEventListener('abort', () => {
           console.warn('⚠️ Upload aborted by user');
           setUploadStatus('⚠️ Upload cancelled');
@@ -283,11 +254,10 @@ const Products = () => {
           setBulkUploadLoading(false);
           reject(new Error('Upload cancelled'));
         });
-
         xhr.addEventListener('timeout', () => {
           console.error('⏱️ Upload timeout (5 minutes)');
           const errorMsg = 'Upload timed out after 5 minutes. The file might be too large or connection is slow.';
-          
+     
           setUploadStatus('❌ Upload timeout');
           setUploadResult({
             success: false,
@@ -297,26 +267,24 @@ const Products = () => {
           setBulkUploadLoading(false);
           reject(new Error(errorMsg));
         });
-
         const uploadUrl = `${BASE_URL}/upload-excel-folder`;
         console.log(`📡 Sending POST request to: ${uploadUrl}`);
-        
+   
         xhr.open('POST', uploadUrl, true);
         xhr.timeout = 300000;
         xhr.send(formData);
         console.log('📤 Request sent, waiting for response...');
       });
-
     } catch (error) {
       console.error('❌ Bulk upload error:', error);
       console.error('❌ Error stack:', error.stack);
-      
+ 
       setUploadStatus('❌ Upload failed');
       setUploadResult({
         success: false,
         message: error.message || 'Unknown error occurred'
       });
-      
+ 
       alert(`❌ Upload failed!\n\n${error.message}\n\nPlease check the browser console (F12 → Console) for detailed error information.`);
       setBulkUploadLoading(false);
     }
@@ -329,36 +297,29 @@ const Products = () => {
     setUploadStatus('');
     setUploadResult(null);
     setBulkUploadLoading(false);
-    
     const excelInput = document.querySelector('input[type="file"][accept*="xlsx"]');
     const zipInput = document.querySelector('input[type="file"][accept*="zip"]');
     if (excelInput) excelInput.value = '';
     if (zipInput) zipInput.value = '';
-    
     console.log('🔄 Bulk upload form reset');
   };
 
   const handleExcelFileSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     console.log('📊 Excel file selected:', file.name, `(${(file.size / 1024).toFixed(2)} KB)`);
-
     const validTypes = [
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'text/csv'
     ];
-
     const validExtensions = /\.(xlsx|xls|csv)$/i;
-
     if (!validTypes.includes(file.type) && !file.name.match(validExtensions)) {
       alert('⚠️ Please select a valid Excel file (.xlsx, .xls, or .csv)');
       e.target.value = '';
       console.error('Invalid file type:', file.type);
       return;
     }
-
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
       alert(`⚠️ Excel file size should not exceed 10MB\n\nYour file: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
@@ -366,7 +327,6 @@ const Products = () => {
       console.error('File too large:', file.size);
       return;
     }
-
     setExcelFile(file);
     setUploadStatus('');
     setUploadResult(null);
@@ -376,19 +336,15 @@ const Products = () => {
   const handleZipFileSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     console.log('🗂️ ZIP file selected:', file.name, `(${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-
     const validTypes = ['application/zip', 'application/x-zip-compressed'];
     const validExtension = /\.zip$/i;
-
     if (!validTypes.includes(file.type) && !file.name.match(validExtension)) {
       alert('⚠️ Please select a valid ZIP file');
       e.target.value = '';
       console.error('Invalid file type:', file.type);
       return;
     }
-
     const maxSize = 100 * 1024 * 1024;
     if (file.size > maxSize) {
       alert(`⚠️ ZIP file size should not exceed 100MB\n\nYour file: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
@@ -396,7 +352,6 @@ const Products = () => {
       console.error('File too large:', file.size);
       return;
     }
-
     setZipFile(file);
     setUploadStatus('');
     setUploadResult(null);
@@ -405,15 +360,13 @@ const Products = () => {
 
   const downloadSampleExcel = () => {
     console.log('📥 Downloading sample Excel template...');
-    
     const sampleData = [
-      'name,sku,status,detail,pricing_tiers,moq,cat_id,cat_sub_id,brand,material,made_in,specification,warranty,seller_id,highlight,f_image,image_2,image_3,image_4,product_catalogue',
-      'Premium Cotton T-Shirt,TSHIRT-001,Active,High quality cotton t-shirt with comfortable fit,{},10,1,1,Nike,100% Cotton,India,Size: M-XL | Color: Multiple,1 Year,4,Yes,tshirt-001-main.jpg,tshirt-001-2.jpg,tshirt-001-3.jpg,tshirt-001-4.jpg,tshirt-001-catalog.pdf',
-      'Leather Wallet,WALLET-001,Active,Genuine leather wallet with multiple card slots,{},5,2,3,Gucci,Genuine Leather,Italy,Premium quality | 8 card slots,2 Years,4,No,wallet-001-main.jpg,wallet-001-2.jpg,wallet-001-3.jpg,,wallet-001-catalog.pdf',
-      'Wireless Earbuds,EARBUDS-001,Active,Latest wireless earbuds with noise cancellation,{},20,3,5,Sony,Plastic/Metal,China,Bluetooth 5.0 | 24hr battery,1 Year,4,Yes,earbuds-001-main.jpg,earbuds-001-2.jpg,,,earbuds-001-catalog.pdf',
-      'Running Shoes,SHOES-001,Active,Comfortable running shoes for all terrains,{},15,1,2,Adidas,Synthetic,Vietnam,Sizes: 6-12 | Anti-slip sole,6 Months,4,No,shoes-001-main.jpg,shoes-001-2.jpg,shoes-001-3.jpg,shoes-001-4.jpg,'
+      'name,sku,status,detail,pricing_tiers,moq,cat_id,cat_sub_id,brand,material,made_in,specification,warranty,seller_id,f_image,image_2,image_3,image_4,product_catalogue',
+      'Premium Cotton T-Shirt,TSHIRT-001,Active,High quality cotton t-shirt with comfortable fit,{},10,1,1,Nike,100% Cotton,India,Size: M-XL | Color: Multiple,1 Year,4,tshirt-001-main.jpg,tshirt-001-2.jpg,tshirt-001-3.jpg,tshirt-001-4.jpg,tshirt-001-catalog.pdf',
+      'Leather Wallet,WALLET-001,Active,Genuine leather wallet with multiple card slots,{},5,2,3,Gucci,Genuine Leather,Italy,Premium quality | 8 card slots,2 Years,4,wallet-001-main.jpg,wallet-001-2.jpg,wallet-001-3.jpg,,wallet-001-catalog.pdf',
+      'Wireless Earbuds,EARBUDS-001,Active,Latest wireless earbuds with noise cancellation,{},20,3,5,Sony,Plastic/Metal,China,Bluetooth 5.0 | 24hr battery,1 Year,4,earbuds-001-main.jpg,earbuds-001-2.jpg,,,earbuds-001-catalog.pdf',
+      'Running Shoes,SHOES-001,Active,Comfortable running shoes for all terrains,{},15,1,2,Adidas,Synthetic,Vietnam,Sizes: 6-12 | Anti-slip sole,6 Months,4,shoes-001-main.jpg,shoes-001-2.jpg,shoes-001-3.jpg,shoes-001-4.jpg,'
     ].join('\n');
-
     const blob = new Blob([sampleData], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -423,29 +376,23 @@ const Products = () => {
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
-    
     console.log('✅ Sample template downloaded');
   };
 
   const getImageUrl = (imagePath) => {
     if (!imagePath) return null;
-    
     if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
       return imagePath;
     }
-    
     if (imagePath.startsWith('data:')) {
       return imagePath;
     }
-    
     if (imagePath.startsWith('/')) {
       return `${BASE_URL}${imagePath}`;
     }
-    
     if (imagePath.includes('/')) {
       return `${BASE_URL}/${imagePath}`;
     }
-    
     return `${BASE_URL}/uploads/${imagePath}`;
   };
 
@@ -466,17 +413,14 @@ const Products = () => {
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-
           if (width > maxWidth) {
             height = (height * maxWidth) / width;
             width = maxWidth;
           }
-
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
-
           canvas.toBlob(
             (blob) => {
               resolve(new File([blob], file.name, {
@@ -497,10 +441,8 @@ const Products = () => {
   const handleFileSelect = async (e, fieldName) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const validImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     const validDocTypes = ['application/pdf'];
-    
     if (fieldName === 'product_catalogue') {
       if (!validDocTypes.includes(file.type) && !validImageTypes.includes(file.type)) {
         alert('Please select a valid PDF or image file for catalogue');
@@ -512,27 +454,22 @@ const Products = () => {
         return;
       }
     }
-
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
       alert('File size should not exceed 5MB');
       return;
     }
-
     try {
       let processedFile = file;
-
       if (validImageTypes.includes(file.type) && file.size > 500 * 1024) {
         console.log(`Compressing ${fieldName}...`);
         processedFile = await compressImage(file);
         console.log(`Compressed from ${(file.size / 1024).toFixed(2)}KB to ${(processedFile.size / 1024).toFixed(2)}KB`);
       }
-
       setImageFiles(prev => ({
         ...prev,
         [fieldName]: processedFile
       }));
-
       const reader = new FileReader();
       reader.onloadend = () => {
         setImagePreviews(prev => ({
@@ -562,12 +499,12 @@ const Products = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${BASE_URL}/products`);
+      const response = await fetch(`${BASE_URL}/product_seller/6`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      
+ 
       const data = await response.json();
       let productsArray = [];
-      
+ 
       if (Array.isArray(data)) {
         productsArray = data;
       } else if (data && Array.isArray(data.data)) {
@@ -575,7 +512,7 @@ const Products = () => {
       } else if (data && Array.isArray(data.products)) {
         productsArray = data.products;
       }
-      
+ 
       setProducts(productsArray);
       console.log(`✅ Fetched ${productsArray.length} products`);
     } catch (error) {
@@ -592,9 +529,9 @@ const Products = () => {
     try {
       const response = await fetch(`${BASE_URL}/product/${productId}`);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      
+ 
       const data = await response.json();
-      
+ 
       let productData = null;
       if (data.data) {
         productData = data.data;
@@ -603,7 +540,7 @@ const Products = () => {
       } else {
         productData = data;
       }
-      
+ 
       return productData;
     } catch (error) {
       console.error('Error fetching product details:', error);
@@ -617,7 +554,7 @@ const Products = () => {
     try {
       const response = await fetch(`${BASE_URL}/categories`);
       const data = await response.json();
-      
+ 
       let categoriesArray = [];
       if (Array.isArray(data)) {
         categoriesArray = data;
@@ -626,7 +563,7 @@ const Products = () => {
       } else if (data && Array.isArray(data.categories)) {
         categoriesArray = data.categories;
       }
-      
+ 
       setCategories(categoriesArray);
       console.log(`✅ Fetched ${categoriesArray.length} categories`);
     } catch (error) {
@@ -639,7 +576,7 @@ const Products = () => {
     try {
       const response = await fetch(`${BASE_URL}/subcategories`);
       const data = await response.json();
-      
+ 
       let subCategoriesArray = [];
       if (Array.isArray(data)) {
         subCategoriesArray = data;
@@ -648,7 +585,7 @@ const Products = () => {
       } else if (data && Array.isArray(data.subcategories)) {
         subCategoriesArray = data.subcategories;
       }
-      
+ 
       setSubCategories(subCategoriesArray);
       console.log(`✅ Fetched ${subCategoriesArray.length} subcategories`);
     } catch (error) {
@@ -662,10 +599,10 @@ const Products = () => {
       const response = await fetch(`${BASE_URL}/sellers`);
       if (!response.ok) throw new Error('Failed to fetch sellers');
       const data = await response.json();
-      
+ 
       const sellersMap = {};
       let sellersArray = [];
-      
+ 
       if (Array.isArray(data)) {
         sellersArray = data;
       } else if (data && Array.isArray(data.data)) {
@@ -673,11 +610,11 @@ const Products = () => {
       } else if (data && Array.isArray(data.sellers)) {
         sellersArray = data.sellers;
       }
-      
+ 
       sellersArray.forEach(seller => {
         sellersMap[seller.id] = seller.name || seller.company_name || `Seller ${seller.id}`;
       });
-      
+ 
       setSellers(sellersMap);
       console.log(`✅ Fetched ${sellersArray.length} sellers`);
     } catch (error) {
@@ -701,14 +638,13 @@ const Products = () => {
   };
 
   const checkDuplicateSKU = (sku, currentProductId = null) => {
-    return products.some(product => 
+    return products.some(product =>
       product.sku === sku && product.id !== currentProductId
     );
   };
 
   const validateForm = () => {
     const errors = {};
-    
     if (!newProduct.name.trim()) errors.name = 'Product name is required';
     if (!newProduct.sku.trim()) {
       errors.sku = 'SKU is required';
@@ -718,7 +654,6 @@ const Products = () => {
     if (!newProduct.cat_id) errors.cat_id = 'Category is required';
     if (!newProduct.cat_sub_id) errors.cat_sub_id = 'Sub category is required';
     if (newProduct.moq < 1) errors.moq = 'MOQ must be at least 1';
-    
     if (newProduct.pricing_tiers && newProduct.pricing_tiers !== '{}') {
       try {
         JSON.parse(newProduct.pricing_tiers);
@@ -726,7 +661,6 @@ const Products = () => {
         errors.pricing_tiers = 'Invalid JSON format for pricing tiers';
       }
     }
-    
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -742,12 +676,10 @@ const Products = () => {
       alert('Please fill in all required fields correctly');
       return;
     }
-
     setSubmitLoading(true);
-    
     try {
       const formData = new FormData();
-      
+ 
       formData.append('name', newProduct.name.trim());
       formData.append('sku', newProduct.sku.trim());
       formData.append('status', newProduct.status);
@@ -762,28 +694,22 @@ const Products = () => {
       formData.append('specification', newProduct.specification.trim());
       formData.append('warranty', newProduct.warranty.trim());
       formData.append('seller_id', parseInt(newProduct.seller_id) || 4);
-      formData.append('highlight', newProduct.highlight);
-
-      if (imageFiles.f_image) formData.append('f_image', imageFiles.f_image);
-      if (imageFiles.image_2) formData.append('image_2', imageFiles.image_2);
+     if (imageFiles.fimage) formData.append('productImage', imageFiles.fimage) // Backend field name
+if (imageFiles.image2) formData.append('additionalImage1', imageFiles.image2)
       if (imageFiles.image_3) formData.append('image_3', imageFiles.image_3);
       if (imageFiles.image_4) formData.append('image_4', imageFiles.image_4);
       if (imageFiles.product_catalogue) formData.append('product_catalogue', imageFiles.product_catalogue);
-
       const response = await fetch(`${BASE_URL}/product`, {
         method: 'POST',
         body: formData
       });
-
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
         console.error('Non-JSON response:', text);
         throw new Error('Server returned non-JSON response. Please check server configuration.');
       }
-
       const result = await response.json();
-
       if (response.ok) {
         await fetchProducts();
         setShowAddModal(false);
@@ -791,7 +717,7 @@ const Products = () => {
         alert('✅ Product added successfully!');
       } else {
         let errorMessage = 'Failed to add product';
-        
+   
         if (result.error) {
           if (result.error.includes('Duplicate entry') && result.error.includes('sku')) {
             errorMessage = `❌ This SKU "${newProduct.sku}" already exists in the database. Please use a unique SKU.`;
@@ -802,7 +728,7 @@ const Products = () => {
         } else if (result.message) {
           errorMessage = `❌ ${result.message}`;
         }
-        
+   
         throw new Error(errorMessage);
       }
     } catch (error) {
@@ -829,10 +755,8 @@ const Products = () => {
       made_in: product.made_in || '',
       specification: product.specification || '',
       warranty: product.warranty || '',
-      seller_id: product.seller_id || 4,
-      highlight: product.highlight || 'No'
+      seller_id: product.seller_id || 4
     });
-    
     setImagePreviews({
       f_image: product.f_image ? getImageUrl(product.f_image) : null,
       image_2: product.image_2 ? getImageUrl(product.image_2) : null,
@@ -840,7 +764,6 @@ const Products = () => {
       image_4: product.image_4 ? getImageUrl(product.image_4) : null,
       product_catalogue: product.product_catalogue ? getImageUrl(product.product_catalogue) : null
     });
-    
     setImageFiles({
       f_image: null,
       image_2: null,
@@ -848,7 +771,6 @@ const Products = () => {
       image_4: null,
       product_catalogue: null
     });
-    
     setFormErrors({});
     setShowAddModal(true);
     setShowViewModal(false);
@@ -859,12 +781,10 @@ const Products = () => {
       alert('Please fill in all required fields correctly');
       return;
     }
-
     setSubmitLoading(true);
-
     try {
       const formData = new FormData();
-      
+ 
       formData.append('name', newProduct.name.trim());
       formData.append('sku', newProduct.sku.trim());
       formData.append('status', newProduct.status);
@@ -879,28 +799,22 @@ const Products = () => {
       formData.append('specification', newProduct.specification.trim());
       formData.append('warranty', newProduct.warranty.trim());
       formData.append('seller_id', parseInt(newProduct.seller_id) || 4);
-      formData.append('highlight', newProduct.highlight);
-
       if (imageFiles.f_image) formData.append('f_image', imageFiles.f_image);
       if (imageFiles.image_2) formData.append('image_2', imageFiles.image_2);
       if (imageFiles.image_3) formData.append('image_3', imageFiles.image_3);
       if (imageFiles.image_4) formData.append('image_4', imageFiles.image_4);
       if (imageFiles.product_catalogue) formData.append('product_catalogue', imageFiles.product_catalogue);
-
       const response = await fetch(`${BASE_URL}/product/${editingProduct.id}`, {
         method: 'PATCH',
         body: formData
       });
-
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
         console.error('Non-JSON response:', text);
         throw new Error('Server returned non-JSON response. Please check server configuration.');
       }
-
       const result = await response.json();
-
       if (response.ok) {
         await fetchProducts();
         setShowAddModal(false);
@@ -909,7 +823,7 @@ const Products = () => {
         alert('✅ Product updated successfully!');
       } else {
         let errorMessage = 'Failed to update product';
-        
+   
         if (result.error) {
           if (result.error.includes('Duplicate entry') && result.error.includes('sku')) {
             errorMessage = `❌ This SKU "${newProduct.sku}" already exists. Please use a unique SKU.`;
@@ -920,7 +834,7 @@ const Products = () => {
         } else if (result.message) {
           errorMessage = `❌ ${result.message}`;
         }
-        
+   
         throw new Error(errorMessage);
       }
     } catch (error) {
@@ -938,14 +852,13 @@ const Products = () => {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
         });
-
         if (response.ok) {
           await fetchProducts();
           alert('✅ Product deleted successfully!');
         } else {
           const errorText = await response.text();
           console.error('Delete failed with status:', response.status, errorText);
-          
+     
           if (response.status === 404) throw new Error('Product not found on server');
           else if (response.status === 500) throw new Error('Server error while deleting product');
           else throw new Error(`Delete failed: ${response.status}`);
@@ -957,11 +870,36 @@ const Products = () => {
     }
   };
 
+  const toggleStatus = async (productId, newStatus) => {
+    if (newStatus === undefined) return;
+    try {
+      const formData = new FormData();
+      formData.append('status', newStatus);
+      const response = await fetch(`${BASE_URL}/product/${productId}`, {
+        method: 'PATCH',
+        body: formData
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      // Update local state
+      setProducts(prevProducts =>
+        prevProducts.map(product =>
+          product.id === productId ? { ...product, status: newStatus } : product
+        )
+      );
+      console.log(`Status updated to ${newStatus}`);
+    } catch (error) {
+      console.error('Error updating status:', error);
+      alert(`Failed to update status: ${error.message}`);
+    }
+  };
+
   const resetForm = () => {
     setNewProduct({
       name: '', sku: '', status: 'Active', detail: '', pricing_tiers: '{}',
       moq: 1, cat_id: '', cat_sub_id: '', brand: '', material: '', made_in: '',
-      specification: '', warranty: '', sellerid: '', highlight: 'No'
+      specification: '', warranty: '', seller_id: ''
     });
     setImagePreviews({
       f_image: null, image_2: null, image_3: null, image_4: null, product_catalogue: null
@@ -1003,9 +941,7 @@ const Products = () => {
   const ProductImage = ({ src, alt, className, showBadge = false }) => {
     const [imageError, setImageError] = useState(false);
     const [imageLoading, setImageLoading] = useState(true);
-    
     const imageUrl = getImageUrl(src);
-
     if (!imageUrl || imageError) {
       return (
         <div className={`${className} bg-gradient-to-br from-gray-200 to-gray-300 flex flex-col items-center justify-center`}>
@@ -1016,7 +952,6 @@ const Products = () => {
         </div>
       );
     }
-
     return (
       <div className="relative group">
         {imageLoading && (
@@ -1024,7 +959,7 @@ const Products = () => {
             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
           </div>
         )}
-        <img 
+        <img
           src={imageUrl}
           alt={alt || 'Product Image'}
           className={`${className} ${imageLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
@@ -1050,7 +985,7 @@ const Products = () => {
       <label className="block text-sm font-medium text-gray-700 mb-2">
         {label} {isRequired && <span className="text-red-500">*</span>}
       </label>
-      
+ 
       <div className="space-y-3">
         <label className="cursor-pointer block">
           <div className="flex items-center justify-center px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all">
@@ -1061,14 +996,13 @@ const Products = () => {
               {imageFiles[fieldName] ? imageFiles[fieldName].name : 'Choose File'}
             </span>
           </div>
-          <input 
-            type="file" 
-            accept={acceptType} 
-            onChange={(e) => handleFileSelect(e, fieldName)} 
-            className="hidden" 
+          <input
+            type="file"
+            accept={acceptType}
+            onChange={(e) => handleFileSelect(e, fieldName)}
+            className="hidden"
           />
         </label>
-
         {imagePreviews[fieldName] && (
           <div className="relative inline-block">
             {fieldName === 'product_catalogue' && isPDF(imagePreviews[fieldName]) ? (
@@ -1079,8 +1013,8 @@ const Products = () => {
                 <span className="text-sm text-gray-700">PDF Catalogue Selected</span>
               </div>
             ) : (
-              <img 
-                src={imagePreviews[fieldName]} 
+              <img
+                src={imagePreviews[fieldName]}
                 alt={`Preview ${fieldName}`}
                 className="w-32 h-32 object-cover rounded-lg border-2 border-gray-200"
                 onError={(e) => {
@@ -1101,7 +1035,7 @@ const Products = () => {
           </div>
         )}
       </div>
-      
+ 
       <p className="text-xs text-gray-500 mt-1">
         Max file size: 5MB. Images will be auto-compressed. Supported: JPEG, PNG, GIF, WebP
         {fieldName === 'product_catalogue' && ', PDF'}
@@ -1117,7 +1051,7 @@ const Products = () => {
             <div className="text-red-500 text-6xl mb-4">❌</div>
             <h3 className="text-lg font-semibold text-gray-700 mb-2">Error Loading Products</h3>
             <p className="text-gray-500 mb-4">{error}</p>
-            <button 
+            <button
               onClick={fetchProducts}
               className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors"
             >
@@ -1140,7 +1074,7 @@ const Products = () => {
               <p className="text-gray-600 mt-1">Manage all your product inventory</p>
             </div>
             <div className="flex gap-3">
-              <button 
+              <button
                 onClick={() => {
                   setShowBulkUploadModal(true);
                   console.log('📤 Bulk upload modal opened');
@@ -1152,8 +1086,8 @@ const Products = () => {
                 </svg>
                 Bulk Upload
               </button>
-              
-              <button 
+         
+              <button
                 onClick={() => {
                   setEditingProduct(null);
                   resetForm();
@@ -1168,7 +1102,7 @@ const Products = () => {
               </button>
             </div>
           </div>
-          
+     
           <div className="bg-white rounded-lg shadow-sm p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -1192,16 +1126,16 @@ const Products = () => {
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
-               <thead className="bg-gradient-to-r from-blue-600 to-blue-700">
+            <thead className="bg-gray-100">
   <tr>
-    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">S.No</th>
-    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Image</th>
-    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Product Name</th>
-    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Category</th>
-    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Brand</th>
-    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">MOQ</th>
-    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Status</th>
-    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Actions</th>
+    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">S.No</th>
+    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Image</th>
+    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Product Name</th>
+    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Category</th>
+    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Brand</th>
+    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">MOQ</th>
+    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
+    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
   </tr>
 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -1223,16 +1157,16 @@ const Products = () => {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-bold text-gray-900">{index + 1}</div>
                         </td>
-                        
+                   
                         {/* ✅ NEW IMAGE COLUMN */}
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <ProductImage 
+                          <ProductImage
                             src={product.f_image}
                             alt={product.name}
                             className="w-16 h-16 object-cover rounded-lg border-2 border-gray-200 shadow-sm"
                           />
                         </td>
-                        
+                   
                         <td className="px-6 py-4">
                           <div className="max-w-xs">
                             <div className="text-sm font-semibold text-gray-900">
@@ -1256,17 +1190,19 @@ const Products = () => {
                           <div className="text-sm font-semibold text-blue-600">{product.moq || 1}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-3 py-1 text-xs font-bold rounded-full ${
-                            product.status === 'Active' 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-red-100 text-red-800'
-                          }`}>
+                          <span
+                            className={`inline-flex px-3 py-1 text-xs font-bold rounded-full ${
+                              product.status === 'Active'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}
+                          >
                             {product.status || 'Active'}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex items-center gap-2">
-                            <button 
+                            <button
                               onClick={() => handleViewProduct(product)}
                               className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-100 rounded-lg transition-colors"
                               title="View Full Details"
@@ -1276,8 +1212,7 @@ const Products = () => {
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                               </svg>
                             </button>
-
-                            <button 
+                            <button
                               onClick={() => handleEditProduct(product)}
                               className="p-2 text-green-600 hover:text-green-700 hover:bg-green-100 rounded-lg transition-colors"
                               title="Edit Product"
@@ -1286,8 +1221,7 @@ const Products = () => {
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                               </svg>
                             </button>
-
-                            <button 
+                            <button
                               onClick={() => handleDeleteProduct(product.id)}
                               className="p-2 text-red-600 hover:text-red-700 hover:bg-red-100 rounded-lg transition-colors"
                               title="Delete Product"
@@ -1335,7 +1269,6 @@ const Products = () => {
                 </button>
               </div>
             </div>
-
             <div className="p-6 space-y-6">
               {/* Instructions */}
               <div className="bg-blue-50 border-l-4 border-blue-500 p-5 rounded-r-lg shadow-sm">
@@ -1355,11 +1288,11 @@ const Products = () => {
                     </ol>
                     <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                       <p className="text-xs text-yellow-800">
-                        <strong>⚠️ Important:</strong> Ensure cat_id and cat_sub_id exist in your database. 
-                        Status values: "Active" or "Inactive". Highlight values: "Yes" or "No".
+                        <strong>⚠️ Important:</strong> Ensure cat_id and cat_sub_id exist in your database.
+                        Status values: "Active" or "Inactive".
                       </p>
                     </div>
-                    <button 
+                    <button
                       onClick={downloadSampleExcel}
                       className="mt-4 inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 transition-colors text-sm font-semibold shadow-md hover:shadow-lg"
                     >
@@ -1371,7 +1304,6 @@ const Products = () => {
                   </div>
                 </div>
               </div>
-
               {/* Excel File Upload */}
               <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-200 rounded-xl p-6 shadow-sm">
                 <label className="block text-lg font-bold text-green-900 mb-4 flex items-center gap-2">
@@ -1380,8 +1312,8 @@ const Products = () => {
                 </label>
                 <label className="cursor-pointer block">
                   <div className={`flex items-center justify-center px-6 py-8 border-3 border-dashed rounded-xl transition-all ${
-                    excelFile 
-                      ? 'border-green-500 bg-green-100' 
+                    excelFile
+                      ? 'border-green-500 bg-green-100'
                       : 'border-green-400 hover:border-green-600 hover:bg-green-100'
                   }`}>
                     <div className="text-center">
@@ -1396,12 +1328,12 @@ const Products = () => {
                       </p>
                     </div>
                   </div>
-                  <input 
-                    type="file" 
-                    accept=".xlsx,.xls,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" 
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
                     onChange={handleExcelFileSelect}
                     disabled={bulkUploadLoading}
-                    className="hidden" 
+                    className="hidden"
                   />
                 </label>
                 {excelFile && (
@@ -1435,7 +1367,6 @@ const Products = () => {
                   </div>
                 )}
               </div>
-
               {/* ZIP File Upload */}
               <div className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 rounded-xl p-6 shadow-sm">
                 <label className="block text-lg font-bold text-purple-900 mb-4 flex items-center gap-2">
@@ -1444,8 +1375,8 @@ const Products = () => {
                 </label>
                 <label className="cursor-pointer block">
                   <div className={`flex items-center justify-center px-6 py-8 border-3 border-dashed rounded-xl transition-all ${
-                    zipFile 
-                      ? 'border-purple-500 bg-purple-100' 
+                    zipFile
+                      ? 'border-purple-500 bg-purple-100'
                       : 'border-purple-400 hover:border-purple-600 hover:bg-purple-100'
                   }`}>
                     <div className="text-center">
@@ -1460,12 +1391,12 @@ const Products = () => {
                       </p>
                     </div>
                   </div>
-                  <input 
-                    type="file" 
-                    accept=".zip,application/zip,application/x-zip-compressed" 
+                  <input
+                    type="file"
+                    accept=".zip,application/zip,application/x-zip-compressed"
                     onChange={handleZipFileSelect}
                     disabled={bulkUploadLoading}
-                    className="hidden" 
+                    className="hidden"
                   />
                 </label>
                 {zipFile && (
@@ -1499,7 +1430,6 @@ const Products = () => {
                   </div>
                 )}
               </div>
-
               {/* Upload Progress */}
               {bulkUploadLoading && (
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-xl p-6 shadow-md">
@@ -1511,7 +1441,7 @@ const Products = () => {
                     </div>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-6 overflow-hidden shadow-inner">
-                    <div 
+                    <div
                       className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 h-6 rounded-full transition-all duration-500 ease-out flex items-center justify-center text-xs font-bold text-white shadow-lg"
                       style={{ width: `${uploadProgress}%` }}
                     >
@@ -1525,7 +1455,6 @@ const Products = () => {
                   )}
                 </div>
               )}
-
               {/* Upload Result */}
               {uploadResult && !bulkUploadLoading && (
                 <div className={`${uploadResult.success ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'} border-2 rounded-xl p-5 shadow-md`}>
@@ -1550,7 +1479,6 @@ const Products = () => {
                 </div>
               )}
             </div>
-
             {/* Footer Actions */}
             <div className="sticky bottom-0 bg-gradient-to-r from-gray-100 to-gray-200 border-t-2 border-gray-300 p-6 rounded-b-2xl">
               <div className="flex gap-4">
@@ -1567,7 +1495,7 @@ const Products = () => {
                   disabled={!excelFile || bulkUploadLoading}
                   className={`flex-1 ${
                     !excelFile || bulkUploadLoading
-                      ? 'bg-gray-400 cursor-not-allowed' 
+                      ? 'bg-gray-400 cursor-not-allowed'
                       : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-lg hover:shadow-xl'
                   } text-white px-6 py-4 rounded-xl transition-all font-bold flex items-center justify-center gap-3 text-lg`}
                 >
@@ -1609,8 +1537,8 @@ const Products = () => {
         </div>
       )}
 
-{/* VIEW PRODUCT MODAL */}
-{showViewModal && viewingProduct && (
+      {/* VIEW PRODUCT MODAL */}
+      {showViewModal && viewingProduct && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[95vh] overflow-y-auto">
             <div className="sticky top-0 bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 text-white p-6 z-10 rounded-t-2xl shadow-lg">
@@ -1633,7 +1561,7 @@ const Products = () => {
                 </button>
               </div>
             </div>
-            
+       
             {viewLoading ? (
               <div className="flex justify-center items-center h-64">
                 <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
@@ -1648,7 +1576,7 @@ const Products = () => {
                     </h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       {viewingProduct.f_image && (
-                        <ProductImage 
+                        <ProductImage
                           src={viewingProduct.f_image}
                           alt="Featured Image"
                           className="w-full h-48 object-cover rounded-xl border-4 border-orange-300 shadow-xl hover:scale-105 transition-transform duration-300"
@@ -1656,21 +1584,21 @@ const Products = () => {
                         />
                       )}
                       {viewingProduct.image_2 && (
-                        <ProductImage 
+                        <ProductImage
                           src={viewingProduct.image_2}
                           alt="Image 2"
                           className="w-full h-48 object-cover rounded-xl border-4 border-orange-300 shadow-xl hover:scale-105 transition-transform duration-300"
                         />
                       )}
                       {viewingProduct.image_3 && (
-                        <ProductImage 
+                        <ProductImage
                           src={viewingProduct.image_3}
                           alt="Image 3"
                           className="w-full h-48 object-cover rounded-xl border-4 border-orange-300 shadow-xl hover:scale-105 transition-transform duration-300"
                         />
                       )}
                       {viewingProduct.image_4 && (
-                        <ProductImage 
+                        <ProductImage
                           src={viewingProduct.image_4}
                           alt="Image 4"
                           className="w-full h-48 object-cover rounded-xl border-4 border-orange-300 shadow-xl hover:scale-105 transition-transform duration-300"
@@ -1679,7 +1607,6 @@ const Products = () => {
                     </div>
                   </div>
                 )}
-
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border-2 border-blue-200 shadow-lg">
                   <h3 className="text-xl font-bold text-blue-900 mb-5 flex items-center gap-2">
                     <span className="text-2xl">ℹ️</span>
@@ -1697,8 +1624,8 @@ const Products = () => {
                     <div className="bg-white p-4 rounded-xl shadow-md hover:shadow-xl transition-shadow">
                       <p className="text-xs font-bold text-gray-500 uppercase mb-2">Status</p>
                       <span className={`inline-flex px-4 py-2 text-sm font-bold rounded-full ${
-                        viewingProduct.status === 'Active' 
-                          ? 'bg-green-100 text-green-800' 
+                        viewingProduct.status === 'Active'
+                          ? 'bg-green-100 text-green-800'
                           : 'bg-red-100 text-red-800'
                       }`}>
                         {viewingProduct.status || 'Active'}
@@ -1711,23 +1638,12 @@ const Products = () => {
                       </p>
                     </div>
                     <div className="bg-white p-4 rounded-xl shadow-md hover:shadow-xl transition-shadow">
-                      <p className="text-xs font-bold text-gray-500 uppercase mb-2">Highlight</p>
-                      <span className={`inline-flex px-4 py-2 text-sm font-bold rounded-full ${
-                        viewingProduct.highlight === 'Yes' 
-                          ? 'bg-yellow-100 text-yellow-800' 
-                          : 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {viewingProduct.highlight === 'Yes' ? '⭐ Yes' : 'No'}
-                      </span>
-                    </div>
-                    <div className="bg-white p-4 rounded-xl shadow-md hover:shadow-xl transition-shadow">
                       <p className="text-xs font-bold text-gray-500 uppercase mb-2">🏪 Seller Name</p>
                       <p className="text-lg font-bold text-gray-900">{getSellerName(viewingProduct.seller_id)}</p>
                       <p className="text-xs text-gray-500 mt-1">Seller ID: {viewingProduct.seller_id}</p>
                     </div>
                   </div>
                 </div>
-
                 <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-xl border-2 border-green-200 shadow-lg">
                   <h3 className="text-xl font-bold text-green-900 mb-5 flex items-center gap-2">
                     <span className="text-2xl">🏷️</span>
@@ -1744,7 +1660,6 @@ const Products = () => {
                     </div>
                   </div>
                 </div>
-
                 <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-xl border-2 border-purple-200 shadow-lg">
                   <h3 className="text-xl font-bold text-purple-900 mb-5 flex items-center gap-2">
                     <span className="text-2xl">📝</span>
@@ -1776,7 +1691,7 @@ const Products = () => {
                       <p className="text-xs font-mono text-gray-700 break-all">{viewingProduct.pricing_tiers || '{}'}</p>
                     </div>
                   </div>
-                  
+             
                   {viewingProduct.detail && (
                     <div className="mt-4 bg-white p-5 rounded-xl shadow-md">
                       <p className="text-sm font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">
@@ -1788,7 +1703,7 @@ const Products = () => {
                       </p>
                     </div>
                   )}
-                  
+             
                   {viewingProduct.specification && (
                     <div className="mt-4 bg-white p-5 rounded-xl shadow-md">
                       <p className="text-sm font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">
@@ -1800,7 +1715,7 @@ const Products = () => {
                       </p>
                     </div>
                   )}
-                  
+             
                   {viewingProduct.product_catalogue && (
                     <div className="mt-4 bg-white p-5 rounded-xl shadow-md">
                       <p className="text-sm font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">
@@ -1808,10 +1723,10 @@ const Products = () => {
                         Product Catalogue
                       </p>
                       {isPDF(viewingProduct.product_catalogue) ? (
-                        <a 
-                          href={getImageUrl(viewingProduct.product_catalogue)} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
+                        <a
+                          href={getImageUrl(viewingProduct.product_catalogue)}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="inline-flex items-center gap-2 bg-red-100 text-red-700 px-4 py-3 rounded-lg hover:bg-red-200 transition-colors font-semibold"
                         >
                           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1820,7 +1735,7 @@ const Products = () => {
                           View PDF Catalogue
                         </a>
                       ) : (
-                        <ProductImage 
+                        <ProductImage
                           src={viewingProduct.product_catalogue}
                           alt="Product Catalogue"
                           className="w-full max-w-md h-auto rounded-lg border-2 border-gray-200 shadow-md"
@@ -1831,7 +1746,6 @@ const Products = () => {
                 </div>
               </div>
             )}
-
             <div className="sticky bottom-0 bg-gradient-to-r from-gray-100 to-gray-200 border-t-2 border-gray-300 p-6 rounded-b-2xl">
               <div className="flex gap-4">
                 <button
@@ -1861,8 +1775,8 @@ const Products = () => {
         </div>
       )}
 
-{/* ADD/EDIT PRODUCT MODAL */}
-{showAddModal && (
+      {/* ADD/EDIT PRODUCT MODAL */}
+      {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-lg max-w-5xl w-full max-h-[90vh] overflow-y-auto my-8">
             <div className="sticky top-0 bg-white border-b border-gray-200 p-6 z-10">
@@ -1873,7 +1787,7 @@ const Products = () => {
                 Fill in the product information below. Images will be auto-compressed to reduce upload size.
               </p>
             </div>
-            
+       
             <div className="p-6 space-y-6">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-blue-900 mb-4 flex items-center gap-2">
@@ -1899,7 +1813,6 @@ const Products = () => {
                     />
                     {formErrors.name && <p className="text-red-500 text-xs mt-1">{formErrors.name}</p>}
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       SKU (Stock Keeping Unit) <span className="text-red-500">*</span>
@@ -1923,7 +1836,6 @@ const Products = () => {
                       </p>
                     )}
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Status <span className="text-red-500">*</span>
@@ -1937,7 +1849,6 @@ const Products = () => {
                       <option value="Inactive">Inactive</option>
                     </select>
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Brand</label>
                     <input
@@ -1948,7 +1859,6 @@ const Products = () => {
                       placeholder="e.g., Nike"
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       MOQ <span className="text-red-500">*</span>
@@ -1966,7 +1876,6 @@ const Products = () => {
                   </div>
                 </div>
               </div>
-
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-green-900 mb-4">Category Information</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1991,7 +1900,6 @@ const Products = () => {
                     </select>
                     {formErrors.cat_id && <p className="text-red-500 text-xs mt-1">{formErrors.cat_id}</p>}
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Sub Category <span className="text-red-500">*</span>
@@ -2016,7 +1924,6 @@ const Products = () => {
                   </div>
                 </div>
               </div>
-
               <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-purple-900 mb-4">Product Details</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2029,7 +1936,6 @@ const Products = () => {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Made In</label>
                     <input
@@ -2039,7 +1945,6 @@ const Products = () => {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Warranty</label>
                     <input
@@ -2049,19 +1954,6 @@ const Products = () => {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Highlight</label>
-                    <select
-                      value={newProduct.highlight}
-                      onChange={(e) => setNewProduct({...newProduct, highlight: e.target.value})}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="No">No</option>
-                      <option value="Yes">Yes</option>
-                    </select>
-                  </div>
-
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
                     <textarea
@@ -2071,7 +1963,6 @@ const Products = () => {
                       rows="3"
                     />
                   </div>
-
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Specifications</label>
                     <textarea
@@ -2083,7 +1974,6 @@ const Products = () => {
                   </div>
                 </div>
               </div>
-
               <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-orange-900 mb-4">Product Images (Auto-Compressed)</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2096,28 +1986,25 @@ const Products = () => {
                   </div>
                 </div>
               </div>
-
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Advanced Settings</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <div>
+                 <div className="md:col-span-2">
   <label className="block text-sm font-medium text-gray-700 mb-2">
     Seller ID <span className="text-red-500">*</span>
   </label>
   <input
     type="number"
-    value={newProduct.sellerid}
+    value={newProduct.seller_id}
     onChange={(e) => {
-      setNewProduct({...newProduct, sellerid: parseInt(e.target.value) || ''});
+      setNewProduct({...newProduct, seller_id: parseInt(e.target.value) || ''});
     }}
     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
     placeholder="Enter Seller ID"
     min="1"
   />
 </div>
-
-
-                  <div>
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-2">Pricing Tiers (JSON)</label>
                     <input
                       type="text"
@@ -2133,7 +2020,6 @@ const Products = () => {
                 </div>
               </div>
             </div>
-
             <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 p-6">
               <div className="flex gap-3">
                 <button

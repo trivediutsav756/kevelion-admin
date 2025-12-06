@@ -1,12 +1,75 @@
 // components/Dashboard.jsx
 import React, { useState, useEffect } from 'react';
 
-const Dashboard = ({ user }) => {
+const ALLOWED_ORDER_STATUSES = ['New', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled', 'Returned'];
+const ORDER_TYPES = ['Order', 'inquiry'];
+
+const normalizeToAllowed = (value, allowed, fallback) => {
+  if (value === null || value === undefined || value === '') return fallback;
+  const v = String(value).trim();
+  if (!v) return fallback;
+  const found = allowed.find(opt => opt.toLowerCase() === v.toLowerCase());
+  return found || fallback;
+};
+
+const getOrderStatus = (order) => {
+  if (!order.products || order.products.length === 0) return 'New';
+  return order.products[0].order_status || 'New';
+};
+
+const fetchOrderStats = async (API_BASE_URL, SELLER_ID) => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/orderseller/${SELLER_ID}`);
+    if (!res.ok) throw new Error('Failed to fetch orders');
+    const data = await res.json();
+
+    const normalizedOrders = (Array.isArray(data) ? data : []).map(order => {
+      const filteredProducts = (order.products || []).filter(p => Number(p.seller_id) === SELLER_ID);
+      const normalizedProducts = filteredProducts.map(p => ({
+        ...p,
+        order_status: normalizeToAllowed(p.order_status, ALLOWED_ORDER_STATUSES, 'New'),
+      }));
+      return {
+        ...order,
+        order_type: normalizeToAllowed(order.order_type, ORDER_TYPES, 'Order'),
+        products: normalizedProducts
+      };
+    }).filter(o => Array.isArray(o.products) && o.products.length > 0);
+
+    const totalOrders = normalizedOrders.length;
+    const orderOrders = normalizedOrders.filter(o => o.order_type === 'Order').length;
+    const inquiryOrders = normalizedOrders.filter(o => o.order_type === 'inquiry').length;
+    const newOrders = normalizedOrders.filter(o => getOrderStatus(o) === 'New').length;
+
+    return {
+      totalOrders,
+      orderOrders,
+      inquiryOrders,
+      newOrders
+    };
+  } catch (err) {
+    console.error('Error fetching order stats:', err);
+    return {
+      totalOrders: 0,
+      orderOrders: 0,
+      inquiryOrders: 0,
+      newOrders: 0
+    };
+  }
+};
+
+const Dashboard = ({ user, onNavigate }) => {
   const [stats, setStats] = useState({
     categories: 0,
     subcategories: 0,
     products: 0,
-    orders: 0
+    orders: 0  // This will now be totalOrders
+  });
+  const [orderBreakdown, setOrderBreakdown] = useState({
+    totalOrders: 0,
+    orderOrders: 0,
+    inquiryOrders: 0,
+    newOrders: 0
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -41,11 +104,11 @@ const Dashboard = ({ user }) => {
       
       try {
         // Fetch all data in parallel
-        const [categoriesRes, subcategoriesRes, productsRes, ordersRes] = await Promise.all([
+        const [categoriesRes, subcategoriesRes, productsRes, orderStatsRes] = await Promise.all([
           fetch(`${API_BASE_URL}/categories`),
           fetch(`${API_BASE_URL}/subcategories`),
-          fetch(`${API_BASE_URL}/products`),
-          fetch(`${API_BASE_URL}/orderseller/${SELLER_ID}`)
+          fetch(`${API_BASE_URL}/product_seller/${SELLER_ID}`),  // Changed to seller-specific products
+          fetchOrderStats(API_BASE_URL, SELLER_ID)
         ]);
 
         // Parse categories
@@ -73,56 +136,33 @@ const Dashboard = ({ user }) => {
         if (productsRes && productsRes.ok) {
           const productsData = await productsRes.json();
           
+          let productsArray = [];
           if (Array.isArray(productsData)) {
-            productsCount = productsData.length;
+            productsArray = productsData;
           } else if (productsData && Array.isArray(productsData.data)) {
-            productsCount = productsData.data.length;
+            productsArray = productsData.data;
           } else if (productsData && Array.isArray(productsData.products)) {
-            productsCount = productsData.products.length;
-          } else if (productsData && typeof productsData === 'object') {
-            // Count the number of product objects if it's an object with product IDs as keys
-            const productKeys = Object.keys(productsData).filter(key => 
-              !['success', 'message', 'count', 'total'].includes(key)
-            );
-            productsCount = productKeys.length;
+            productsArray = productsData.products;
           }
           
+          productsCount = productsArray.length;
           console.log('📦 Products count:', productsCount);
         } else {
           console.error('❌ Failed to fetch products:', productsRes?.status);
         }
 
-        // Parse orders - Count individual order items
-        let ordersCount = 0;
-        if (ordersRes && ordersRes.ok) {
-          const ordersData = await ordersRes.json();
-          
-          if (Array.isArray(ordersData)) {
-            // Count all product items across all orders
-            ordersData.forEach(order => {
-              if (order.products && Array.isArray(order.products)) {
-                ordersCount += order.products.length;
-              }
-            });
-          } else if (ordersData && Array.isArray(ordersData.orders)) {
-            ordersData.orders.forEach(order => {
-              if (order.products && Array.isArray(order.products)) {
-                ordersCount += order.products.length;
-              }
-            });
-          }
-          
-          console.log('🛒 Orders count:', ordersCount);
-        } else {
-          console.error('❌ Failed to fetch orders:', ordersRes?.status);
-        }
+        // orderStatsRes is already processed
+        const orderStats = orderStatsRes;
+        console.log('🛒 Order stats:', orderStats);
 
         setStats({
           categories: categoriesCount,
           subcategories: subcategoriesCount,
           products: productsCount,
-          orders: ordersCount
+          orders: orderStats.totalOrders
         });
+
+        setOrderBreakdown(orderStats);
 
       } catch (err) {
         console.error('Error fetching dashboard stats:', err);
@@ -146,11 +186,11 @@ const Dashboard = ({ user }) => {
     setError('');
     
     try {
-      const [categoriesRes, subcategoriesRes, productsRes, ordersRes] = await Promise.all([
+      const [categoriesRes, subcategoriesRes, productsRes, orderStatsRes] = await Promise.all([
         fetch(`${API_BASE_URL}/categories`),
         fetch(`${API_BASE_URL}/subcategories`),
-        fetch(`${API_BASE_URL}/products`),
-        fetch(`${API_BASE_URL}/orderseller/${SELLER_ID}`)
+        fetch(`${API_BASE_URL}/product_seller/${SELLER_ID}`),
+        fetchOrderStats(API_BASE_URL, SELLER_ID)
       ]);
 
       let categoriesCount = 0;
@@ -169,45 +209,28 @@ const Dashboard = ({ user }) => {
       if (productsRes && productsRes.ok) {
         const productsData = await productsRes.json();
         
+        let productsArray = [];
         if (Array.isArray(productsData)) {
-          productsCount = productsData.length;
+          productsArray = productsData;
         } else if (productsData && Array.isArray(productsData.data)) {
-          productsCount = productsData.data.length;
+          productsArray = productsData.data;
         } else if (productsData && Array.isArray(productsData.products)) {
-          productsCount = productsData.products.length;
-        } else if (productsData && typeof productsData === 'object') {
-          const productKeys = Object.keys(productsData).filter(key => 
-            !['success', 'message', 'count', 'total'].includes(key)
-          );
-          productsCount = productKeys.length;
+          productsArray = productsData.products;
         }
+        
+        productsCount = productsArray.length;
       }
 
-      let ordersCount = 0;
-      if (ordersRes && ordersRes.ok) {
-        const ordersData = await ordersRes.json();
-        
-        if (Array.isArray(ordersData)) {
-          ordersData.forEach(order => {
-            if (order.products && Array.isArray(order.products)) {
-              ordersCount += order.products.length;
-            }
-          });
-        } else if (ordersData && Array.isArray(ordersData.orders)) {
-          ordersData.orders.forEach(order => {
-            if (order.products && Array.isArray(order.products)) {
-              ordersCount += order.products.length;
-            }
-          });
-        }
-      }
+      const orderStats = orderStatsRes;
 
       setStats({
         categories: categoriesCount,
         subcategories: subcategoriesCount,
         products: productsCount,
-        orders: ordersCount
+        orders: orderStats.totalOrders
       });
+
+      setOrderBreakdown(orderStats);
 
       console.log('✅ Stats refreshed successfully');
 
@@ -229,7 +252,13 @@ const Dashboard = ({ user }) => {
             Welcome back, <span className="font-semibold text-blue-600">{user?.name || 'Admin'}</span>
           </p>
         </div>
-       
+        <button 
+          onClick={refreshStats}
+          disabled={loading}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium"
+        >
+          {loading ? 'Refreshing...' : 'Refresh Stats'}
+        </button>
       </div>
 
       {/* Error Message */}
@@ -245,10 +274,13 @@ const Dashboard = ({ user }) => {
         </div>
       )}
 
-      {/* Stats Grid - Now 4 columns with Orders */}
+      {/* Stats Grid - Now 4 columns with Total Orders */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Categories */}
-        <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow">
+        <div 
+          className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow cursor-pointer"
+          onClick={() => onNavigate && onNavigate('category')}
+        >
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-lg font-semibold text-gray-700">Categories</h3>
             <div className="p-2 bg-blue-100 rounded-lg">
@@ -268,7 +300,10 @@ const Dashboard = ({ user }) => {
         </div>
 
         {/* Subcategories */}
-        <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow">
+        <div 
+          className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow cursor-pointer"
+          onClick={() => onNavigate && onNavigate('subcategory')}
+        >
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-lg font-semibold text-gray-700">Subcategories</h3>
             <div className="p-2 bg-green-100 rounded-lg">
@@ -288,7 +323,10 @@ const Dashboard = ({ user }) => {
         </div>
 
         {/* Products */}
-        <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow relative">
+        <div 
+          className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow relative cursor-pointer"
+          onClick={() => onNavigate && onNavigate('products')}
+        >
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-lg font-semibold text-gray-700">Products</h3>
             <div className="p-2 bg-orange-100 rounded-lg">
@@ -315,10 +353,13 @@ const Dashboard = ({ user }) => {
           )}
         </div>
 
-        {/* ✅ NEW: Orders */}
-        <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow relative">
+        {/* Total Orders */}
+        <div 
+          className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow relative cursor-pointer"
+          onClick={() => onNavigate && onNavigate('ordermanagement')}
+        >
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-semibold text-gray-700">Orders</h3>
+            <h3 className="text-lg font-semibold text-gray-700">Total Orders</h3>
             <div className="p-2 bg-purple-100 rounded-lg">
               <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -332,7 +373,7 @@ const Dashboard = ({ user }) => {
               stats.orders.toLocaleString()
             )}
           </p>
-          <p className="text-sm text-gray-500 mt-1">Total orders</p>
+          <p className="text-sm text-gray-500 mt-1">All orders & inquiries</p>
           
           {/* Live indicator */}
           {!loading && (
@@ -344,6 +385,53 @@ const Dashboard = ({ user }) => {
         </div>
       </div>
 
+      {/* Order Breakdown Section */}
+      {!loading && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Orders */}
+          <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow cursor-pointer">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-gray-700">Orders</h3>
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-blue-600">{orderBreakdown.orderOrders.toLocaleString()}</p>
+            <p className="text-sm text-gray-500 mt-1">Order type only</p>
+          </div>
+
+          {/* Inquiries */}
+          <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow cursor-pointer">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-gray-700">Inquiries</h3>
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-orange-600">{orderBreakdown.inquiryOrders.toLocaleString()}</p>
+            <p className="text-sm text-gray-500 mt-1">Inquiry type only</p>
+          </div>
+
+          {/* New Orders */}
+          <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow cursor-pointer">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-semibold text-gray-700">New Orders</h3>
+              <div className="p-2 bg-green-100 rounded-lg">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-3xl font-bold text-green-600">{orderBreakdown.newOrders.toLocaleString()}</p>
+            <p className="text-sm text-gray-500 mt-1">Status: New</p>
+          </div>
+        </div>
+      )}
+
       {/* ✅ Additional Info Section */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-100">
         <div className="flex items-center justify-between">
@@ -352,7 +440,10 @@ const Dashboard = ({ user }) => {
             <p className="text-sm text-gray-600">
               You have <span className="font-bold text-blue-600">{stats.products}</span> products across{' '}
               <span className="font-bold text-blue-600">{stats.categories}</span> categories with{' '}
-              <span className="font-bold text-purple-600">{stats.orders}</span> total orders.
+              <span className="font-bold text-purple-600">{stats.orders}</span> total orders & inquiries (
+              <span className="font-bold text-blue-600">{orderBreakdown.orderOrders}</span> orders,{' '}
+              <span className="font-bold text-orange-600">{orderBreakdown.inquiryOrders}</span> inquiries).
+              <span className="font-bold text-green-600 ml-2"> {orderBreakdown.newOrders} new orders</span> pending.
             </p>
           </div>
           <div className="text-right">

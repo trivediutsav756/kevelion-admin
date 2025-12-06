@@ -161,7 +161,7 @@ const AddEditModal = ({
           {/* Name field second */}
           <div className="mb-5">
             <label className="block text-gray-700 font-semibold mb-2">
-              Name <span className="text-red-500">*</span>
+             subcategorie Name <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -277,6 +277,9 @@ const SubCategoryRow = ({ subcategory, index, categories, onView, onEdit, onDele
       <td className="px-6 py-4 whitespace-nowrap">
         <div className="text-sm font-medium text-gray-900">{index + 1}</div>
       </td>
+      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
+        {subcategory.id || 'N/A'}
+      </td>
       <td className="px-6 py-4 whitespace-nowrap">
         <div className="flex-shrink-0 h-16 w-16">
           {subcategory.image ? (
@@ -369,7 +372,7 @@ const ActionButton = ({ onClick, color, title, icon }) => {
 // Empty State Component
 const EmptyState = () => (
   <tr>
-    <td colSpan="5" className="px-6 py-12 text-center">
+    <td colSpan="6" className="px-6 py-12 text-center">
       <div className="flex flex-col items-center">
         <svg className="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
@@ -680,13 +683,16 @@ const SubCategory = () => {
                       #
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                      ID
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                       Image
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Select SubCategory
+                     Category
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Name
+                      subcategory
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                       Actions

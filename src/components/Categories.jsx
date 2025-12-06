@@ -10,8 +10,11 @@ const Category = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showAddEditModal, setShowAddEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
+  const [selectedDeleteId, setSelectedDeleteId] = useState(null);
+  const [selectedDeleteName, setSelectedDeleteName] = useState('');
   
   // Form state
   const [formData, setFormData] = useState({
@@ -188,16 +191,20 @@ const Category = () => {
 
   // Delete category
   const handleDeleteCategory = async (id, categoryName) => {
-    if (!window.confirm(`Are you sure you want to delete "${categoryName}"?`)) {
-      return;
-    }
+    setSelectedDeleteId(id);
+    setSelectedDeleteName(categoryName);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!selectedDeleteId) return;
 
     setLoading(true);
     setError('');
     setSuccess('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/category/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/category/${selectedDeleteId}`, {
         method: 'DELETE'
       });
 
@@ -213,6 +220,9 @@ const Category = () => {
       console.error('Delete error:', err);
     } finally {
       setLoading(false);
+      setShowDeleteModal(false);
+      setSelectedDeleteId(null);
+      setSelectedDeleteName('');
     }
   };
 
@@ -284,23 +294,35 @@ const Category = () => {
     setError('');
   };
 
+  // Close delete modal
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setSelectedDeleteId(null);
+    setSelectedDeleteName('');
+  };
+
   return (
     <div className="p-6">
       {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-800">Category Management</h1>
+        <p className="text-gray-600 mt-1">Manage all your product categories</p>
+      </div>
+
+      {/* Categories Count and Add Button */}
       <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">Category Management</h1>
-          <p className="text-gray-600 mt-1">Manage product categories</p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={handleOpenAddModal}
-            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <FiPlus className="text-lg" />
-            Add Category
-          </button>
-        </div>
+        <h2 className="text-lg font-semibold text-gray-700">
+          All Categories ({categories.length})
+        </h2>
+        
+        {/* Add Category Button */}
+        <button
+          onClick={handleOpenAddModal}
+          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+        >
+          <FiPlus className="text-lg" />
+          Add Category
+        </button>
       </div>
 
       {/* Success Message */}
@@ -356,6 +378,9 @@ const Category = () => {
                     #
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ID
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Image
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -371,6 +396,9 @@ const Category = () => {
                   <tr key={category.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {index + 1}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
+                      {category.id || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {category.image ? (
@@ -491,6 +519,51 @@ const Category = () => {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-xl font-semibold text-gray-800">Confirm Delete</h2>
+                <button
+                  onClick={closeDeleteModal}
+                  className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                >
+                  <FiX className="text-xl" />
+                </button>
+              </div>
+
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <p className="text-red-800 font-bold text-lg mb-2">
+                  Warning: Deleting this category will also delete all its subcategories!
+                </p>
+                <p className="text-red-700 text-sm">
+                  This action cannot be undone. Are you sure you want to delete &quot;{selectedDeleteName}&quot; and all associated subcategories?
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={closeDeleteModal}
+                  className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 py-2 px-4 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDelete}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-lg font-medium transition-colors"
+                >
+                  Delete Anyway
+                </button>
+              </div>
             </div>
           </div>
         </div>

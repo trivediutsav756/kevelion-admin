@@ -10,6 +10,8 @@ const Sidebar = ({ activeTab, setActiveTab, sidebarOpen, setSidebarOpen, user, o
     { id: 'sellers', label: 'Sellers', icon: '👥' }, // ✅ id 'sellers' honi chahiye
     { id: 'buyers', label: 'Buyers', icon: '🛒' },
     { id: 'orders', label: 'Orders', icon: '📋' },
+    { id: 'subscriptions', label: 'Subscriptions', icon: '💳' }, // ✅ Added Subscriptions menu item
+    { id: 'sliders', label: 'Sliders', icon: '🎞️' }, // ✅ Added Sliders menu item
   ];
 
   return (

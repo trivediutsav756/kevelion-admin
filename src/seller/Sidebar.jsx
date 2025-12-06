@@ -118,7 +118,7 @@ const Sidebar = ({ activeSection, onSectionChange, onLogout }) => {
                   <FiUser className="text-lg" />
                 </div>
                 <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-800">seller</p>
+                  <p className="text-sm font-medium text-gray-800">Mamta</p>
                   <p className="text-xs text-gray-500">id 6</p>
                 </div>
               </div>
