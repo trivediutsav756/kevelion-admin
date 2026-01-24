@@ -12,7 +12,7 @@ const Subcategory = () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('http://rettalion.apxfarms.com/subcategories');
+      const response = await fetch('https://kevelionapi.kevelion.comsubcategories');
       if (!response.ok) {
         throw new Error('Failed to fetch subcategories');
       }
@@ -100,7 +100,7 @@ const Subcategory = () => {
                       <td className="px-16 py-4 whitespace-nowrap">
                         {subcategory.image ? (
                           <img 
-                            src={`http://rettalion.apxfarms.com${subcategory.image}`} 
+                            src={`https://kevelionapi.kevelion.com${subcategory.image}`} 
                             alt={subcategory.subcategory_name || subcategory.name}
                             className="h-12 w-12 rounded-lg object-cover border"
                             onError={(e) => {

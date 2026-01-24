@@ -20,7 +20,7 @@ const Subscription = () => {
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const API_BASE = 'http://rettalion.apxfarms.com';
+  const API_BASE = 'https://kevelionapi.kevelion.com';
 
   // Fetch all packages from API
   const fetchPackages = async () => {

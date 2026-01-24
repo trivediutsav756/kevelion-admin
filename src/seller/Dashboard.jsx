@@ -74,7 +74,8 @@ const Dashboard = ({ user, onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const API_BASE_URL = 'http://rettalion.apxfarms.com';
+  const API_BASE_URL = '/api';
+
   const SELLER_ID = 6; // You can make this dynamic based on logged-in user
 
   // ✅ Authentication Check - Redirect if not logged in

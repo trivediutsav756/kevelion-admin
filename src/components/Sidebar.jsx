@@ -7,11 +7,13 @@ const Sidebar = ({ activeTab, setActiveTab, sidebarOpen, setSidebarOpen, user, o
     { id: 'categories', label: 'Categories', icon: '🛠️' },
     { id: 'subcategories', label: 'Sub Categories', icon: '🔩' },
     { id: 'products', label: 'Products', icon: '📦' },
-    { id: 'sellers', label: 'Sellers', icon: '👥' }, // ✅ id 'sellers' honi chahiye
+    { id: 'sellers', label: 'Sellers', icon: '👥' }, // id 'sellers' honi chahiye
     { id: 'buyers', label: 'Buyers', icon: '🛒' },
     { id: 'orders', label: 'Orders', icon: '📋' },
-    { id: 'subscriptions', label: 'Subscriptions', icon: '💳' }, // ✅ Added Subscriptions menu item
-    { id: 'sliders', label: 'Sliders', icon: '🎞️' }, // ✅ Added Sliders menu item
+    { id: 'reports', label: 'Reports', icon: '📈' },
+    { id: 'subscriptions', label: 'Subscriptions', icon: '💳' }, // Added Subscriptions menu item
+    { id: 'sliders', label: 'Sliders', icon: '🎞️' }, // Added Sliders menu item
+    { id: 'faqs', label: 'FAQs', icon: '❓' },
   ];
 
   return (
@@ -36,9 +38,9 @@ const Sidebar = ({ activeTab, setActiveTab, sidebarOpen, setSidebarOpen, user, o
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold">R</span>
+              <span className="text-white font-bold">K</span>
             </div>
-            <h1 className="text-xl font-bold text-gray-800">Retaillian</h1>
+            <h1 className="text-xl font-bold text-gray-800">kevelion</h1>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}

@@ -7,7 +7,7 @@ const Category = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const API_BASE_URL = 'http://rettalion.apxfarms.com';
+  const API_BASE_URL = 'https://kevelionapi.kevelion.com';
 
   // Fetch all categories
   const fetchCategories = async () => {

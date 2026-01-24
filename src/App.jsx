@@ -12,8 +12,10 @@ import AdminProducts from './components/Products';
 import Sellers from './components/Sellers';
 import Buyer from './components/Buyer';
 import AdminOrderDashboard from './components/Order';
+import Reports from './components/Reports';
 import Subscription from './components/Subscription'; // ✅ Added Subscription import
 import Slider from './components/Slider';
+import Faqs from './components/Faqs'; // ✅ Added Faqs import
 
 
 // Uncomment these when you create the components
@@ -80,10 +82,14 @@ function App() {
         return <Buyer />;
       case 'orders':
         return <AdminOrderDashboard />;
+      case 'reports':
+        return <Reports />;
       case 'subscriptions': // ✅ Added subscriptions case
         return <Subscription />;
-        case 'sliders':
-          return <Slider />
+      case 'sliders':
+        return <Slider />;
+      case 'faqs':
+        return <Faqs />;
       default:
         return <AdminDashboard />;
     }

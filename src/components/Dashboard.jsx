@@ -34,7 +34,7 @@ const Dashboard = ({ onNavigate }) => {
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
-  const API_BASE = 'http://rettalion.apxfarms.com';
+  const API_BASE = 'https://kevelionapi.kevelion.com';
 
   // Fetch buyers count from API
   const fetchBuyersCount = async () => {
@@ -42,7 +42,7 @@ const Dashboard = ({ onNavigate }) => {
     setError('');
     try {
       console.log('Fetching buyers count...');
-      const response = await fetch(`${API_BASE}/buyers`);
+      const response = await fetch(`${API_BASE}/buyers/`);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -52,10 +52,12 @@ const Dashboard = ({ onNavigate }) => {
       
       const data = await response.json();
       console.log('Fetched buyers data:', data);
-      
+
       let buyersArray = [];
       if (Array.isArray(data)) {
         buyersArray = data;
+      } else if (data && Array.isArray(data.data)) {
+        buyersArray = data.data;
       } else if (data && Array.isArray(data.buyers)) {
         buyersArray = data.buyers;
       } else {

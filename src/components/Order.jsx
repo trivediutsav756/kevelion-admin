@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+
 import {
   FiEye,
   FiRefreshCw,
@@ -20,15 +21,20 @@ const OrderManagement = () => {
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [actionError, setActionError] = useState(null);
   const [sellerId, setSellerId] = useState(6);
+
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [orderTypeFilter, setOrderTypeFilter] = useState('all');
   const [orderTypeOptions, setOrderTypeOptions] = useState([{ value: 'all', label: 'All Types' }]);
   const [expandedOrders, setExpandedOrders] = useState({});
-  const BASE_URL = 'http://rettalion.apxfarms.com';
+  const BASE_URL = 'https://kevelionapi.kevelion.com';
+
+  const pendingOrderTypesRef = useRef(new Map());
+
   const filterOptions = [
     { value: 'all', label: 'All Orders', color: 'gray' },
     { value: 'new', label: 'New', color: 'blue' },
@@ -77,7 +83,7 @@ const OrderManagement = () => {
     setFilteredOrders(filtered);
   };
 
-  // ✅ Toggle product expansion
+  // Toggle product expansion
   const toggleOrderExpansion = (orderId) => {
     setExpandedOrders(prev => ({
       ...prev,
@@ -90,12 +96,82 @@ const OrderManagement = () => {
     setIsDetailModalOpen(true);
   };
 
-  // ✅ Fetch and Group Orders by Order ID
+  const getNextOrderType = (currentType) => {
+    const t = String(currentType || '').trim().toLowerCase();
+    if (t === 'inquiry') return 'Order';
+    return 'inquiry';
+  };
+
+  const updateOrderType = async (orderId, nextType) => {
+    const prevOrders = orders;
+
+    setOrders(prev =>
+      prev.map(o => (o.orderId === orderId ? { ...o, orderType: nextType } : o))
+    );
+
+    try {
+      const payload = {
+        order_id: orderId,
+        order_type: nextType,
+      };
+      const config = {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000,
+      };
+
+      const tryRequest = async (method, url) => {
+        const m = String(method || '').toLowerCase();
+        if (m === 'patch') return axios.patch(url, payload, config);
+        if (m === 'post') return axios.post(url, payload, config);
+        if (m === 'put') return axios.put(url, payload, config);
+        throw new Error(`Unsupported method: ${method}`);
+      };
+
+      const urls = [`${BASE_URL}/ordersOrderType`, `${BASE_URL}/ordersOrderType/`];
+      const methods = ['patch', 'post', 'put'];
+
+      let success = false;
+      let lastErr = null;
+      for (const method of methods) {
+        for (const url of urls) {
+          try {
+            await tryRequest(method, url);
+            success = true;
+            break;
+          } catch (err) {
+            lastErr = err;
+            const status = err?.response?.status;
+            if (status !== 404) throw err;
+          }
+        }
+        if (success) break;
+      }
+      if (!success && lastErr) throw lastErr;
+
+      pendingOrderTypesRef.current.set(orderId, nextType);
+      setTimeout(() => {
+        fetchOrders();
+      }, 2000);
+
+      setActionError(null);
+    } catch (e) {
+      setOrders(prevOrders);
+      const status = e?.response?.status;
+      setActionError(
+        status
+          ? `Failed to update order type (HTTP ${status}).`
+          : (e?.message || 'Failed to update order type')
+      );
+    }
+  };
+
+  // Fetch and Group Orders by Order ID
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      setError(null);
-      console.log('🔄 Fetching all orders for seller...');
+      setLoadError(null);
+      setActionError(null);
+      console.log(' Fetching all orders for seller...');
       // Fetch orders
       const ordersResponse = await axios.get(
         `${BASE_URL}/orders?seller_id=${sellerId}`,
@@ -128,8 +204,8 @@ const OrderManagement = () => {
           timeout: 10000,
         }
       );
-      console.log('✅ API Response - Orders:', ordersResponse.data);
-      console.log('✅ API Response - Products:', productsResponse.data);
+      console.log(' API Response - Orders:', ordersResponse.data);
+      console.log(' API Response - Products:', productsResponse.data);
       // Create maps
       const productMap = {};
       (productsResponse.data.data || []).forEach(p => {
@@ -144,21 +220,28 @@ const OrderManagement = () => {
         subcategoryMap[s.id] = s;
       });
       const groupedOrders = [];
-  
+
       if (Array.isArray(ordersResponse.data)) {
         ordersResponse.data.forEach(order => {
           if (order.products && Array.isArray(order.products)) {
             const sellerProducts = order.products;
-           
+
             if (sellerProducts.length > 0) {
               const orderStatus = sellerProducts[0]?.order_status?.toLowerCase() || 'new';
               const paymentStatus = sellerProducts[0]?.payment_status?.toLowerCase() || 'pending';
               const totalQuantity = sellerProducts.reduce((sum, p) => sum + (p.quantity || 0), 0);
               const totalAmount = sellerProducts.reduce((sum, p) => sum + (parseFloat(p.price || 0) * (p.quantity || 0)), 0);
+
+              const pendingType = pendingOrderTypesRef.current.get(order.id);
+              const resolvedOrderType = pendingType || order.order_type;
+              if (pendingType && String(order.order_type || '').toLowerCase() === String(pendingType || '').toLowerCase()) {
+                pendingOrderTypesRef.current.delete(order.id);
+              }
+
               groupedOrders.push({
                 orderId: order.id,
                 buyerId: order.buyer_id,
-                orderType: order.order_type,
+                orderType: resolvedOrderType,
                 createdAt: order.created_at,
                 updatedAt: order.updated_at,
                 orderStatus: orderStatus,
@@ -195,14 +278,14 @@ const OrderManagement = () => {
           }
         });
       }
-  
-      console.log('✅ Total Grouped Orders:', groupedOrders.length);
-  
+
+      console.log(' Total Grouped Orders:', groupedOrders.length);
+
       setOrders(groupedOrders);
-      setError(null);
+      setLoadError(null);
     } catch (err) {
-      console.error('❌ Error:', err);
-  
+      console.error(' Error:', err);
+
       let errorMessage = 'Failed to fetch orders. ';
       if (err.response) {
         errorMessage += `Server Error: ${err.response.status}`;
@@ -211,7 +294,7 @@ const OrderManagement = () => {
       } else {
         errorMessage += err.message;
       }
-      setError(errorMessage);
+      setLoadError(errorMessage);
       setOrders([]);
     } finally {
       setLoading(false);
@@ -293,27 +376,17 @@ const OrderManagement = () => {
 
   const statusCounts = getStatusCounts();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 font-medium">Loading orders...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
+  if (loadError && orders.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
           <div className="text-red-500 text-center">
+
             <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <h3 className="text-xl font-bold text-gray-800 mb-2">Error Loading Orders</h3>
-            <p className="text-gray-600 mb-4 text-sm">{error}</p>
+            <p className="text-gray-600 mb-4 text-sm">{loadError}</p>
             <button
               onClick={fetchOrders}
               className="w-full bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition flex items-center justify-center"
@@ -330,7 +403,20 @@ const OrderManagement = () => {
   return (
     <div className="min-h-screen bg-gray-50 py-6 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
-    
+
+        {actionError && (
+          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start justify-between gap-3">
+            <div className="text-sm">{actionError}</div>
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              className="text-red-700 hover:text-red-900 text-sm font-semibold"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="bg-white rounded-xl shadow-md p-6 mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -389,10 +475,10 @@ const OrderManagement = () => {
             {filterOptions.map(option => {
               const count = option.value === 'all' ? statusCounts.all : statusCounts[option.value] || 0;
               const isActive = statusFilter === option.value;
-          
+
               const getButtonColor = () => {
                 if (!isActive) return 'bg-gray-100 text-gray-700 hover:bg-gray-200';
-            
+
                 switch(option.color) {
                   case 'blue': return 'bg-blue-600 text-white shadow-lg';
                   case 'yellow': return 'bg-yellow-500 text-white shadow-lg';
@@ -405,7 +491,7 @@ const OrderManagement = () => {
                   default: return 'bg-gray-600 text-white shadow-lg';
                 }
               };
-          
+
               return (
                 <button
                   key={option.value}
@@ -470,7 +556,7 @@ const OrderManagement = () => {
             </div>
           </div>
         )}
-        {/* ✅ Orders Table - Desktop View - GROUPED BY ORDER ID */}
+        {/* Orders Table - Desktop View - GROUPED BY ORDER ID */}
         <div className="hidden lg:block bg-white rounded-xl shadow-md overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -490,7 +576,7 @@ const OrderManagement = () => {
                 {filteredOrders.length > 0 ? (
                   filteredOrders.map((order, index) => {
                     const isExpanded = expandedOrders[order.orderId];
-                
+
                     return (
                       <React.Fragment key={index}>
                         <tr className="hover:bg-gray-50 transition duration-150">
@@ -505,14 +591,20 @@ const OrderManagement = () => {
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                            <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800 font-medium">
+                            <button
+                              type="button"
+                              onClick={() => updateOrderType(order.orderId, getNextOrderType(order.orderType))}
+                              className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800 font-medium hover:bg-gray-200 transition-colors"
+                              title="Click to toggle order type"
+                            >
                               {order.orderType || 'N/A'}
-                            </span>
+                            </button>
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-sm text-gray-900">{order.buyerName}</div>
                             <div className="text-sm text-gray-500">ID: {order.buyerId}</div>
                           </td>
+
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium text-gray-900">
@@ -654,7 +746,14 @@ const OrderManagement = () => {
                         <FiCalendar className="w-4 h-4 mr-1" />
                         {formatDate(order.createdAt)}
                       </p>
-                      <p className="text-xs text-gray-400 mt-1">{order.orderType || 'N/A'}</p>
+                      <button
+                        type="button"
+                        onClick={() => updateOrderType(order.orderId, getNextOrderType(order.orderType))}
+                        className="text-xs text-gray-400 mt-1 hover:text-gray-600"
+                        title="Click to toggle order type"
+                      >
+                        {order.orderType || 'N/A'}
+                      </button>
                     </div>
                   </div>
               

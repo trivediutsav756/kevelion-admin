@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FiFilter, FiX, FiChevronDown } from 'react-icons/fi';
 
 const ALLOWED_ORDER_STATUSES = ['New', 'Pending', 'Confirmed', 'Shipped', 'Delivered', 'Cancelled', 'Returned'];
@@ -68,7 +68,7 @@ const StatusDropdown = ({ value, onChange, disabled }) => {
 
 const OrderDashboard = () => {
   const SELLER_ID = 6;
-  const API_BASE_URL = 'http://rettalion.apxfarms.com';
+  const API_BASE_URL = 'https://kevelionapi.kevelion.com';
 
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
@@ -80,6 +80,8 @@ const OrderDashboard = () => {
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
   const [orderTypeFilter, setOrderTypeFilter] = useState('all');
+
+  const pendingOrderTypesRef = useRef(new Map());
 
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingOrder, setViewingOrder] = useState(null);
@@ -157,18 +159,44 @@ const OrderDashboard = () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch(`${API_BASE_URL}/ordersOrderType`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          order_id: orderId,
-          order_type: newType 
-        })
-      });
-      if (!res.ok) throw new Error(`Failed to update order type: ${res.status}`);
-      await fetchOrders();
+      const payload = { 
+        order_id: orderId,
+        order_type: newType 
+      };
+
+      const urls = [`${API_BASE_URL}/ordersOrderType`, `${API_BASE_URL}/ordersOrderType/`];
+      const methods = ['PATCH', 'POST', 'PUT'];
+
+      let res = null;
+      let success = false;
+
+      for (const method of methods) {
+        for (const url of urls) {
+          res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (res.ok) {
+            success = true;
+            break;
+          }
+
+          if (res.status !== 404) {
+            throw new Error(`Failed to update order type: ${res.status}`);
+          }
+        }
+        if (success) break;
+      }
+
+      if (!success) throw new Error(`Failed to update order type: ${res?.status || 'Unknown'}`);
+
+      pendingOrderTypesRef.current.set(orderId, newType);
+      setTimeout(() => {
+        fetchOrders();
+      }, 2000);
     } catch (err) {
-      await fetchOrders();
       setError(err.message);
       console.error('Update order type error:', err);
     } finally {
@@ -254,6 +282,12 @@ const OrderDashboard = () => {
       const data = await res.json();
 
       const normalizedOrders = (Array.isArray(data) ? data : []).map(order => {
+        const pendingType = pendingOrderTypesRef.current.get(order.id);
+        const rawOrderType = pendingType || order.order_type;
+        if (pendingType && String(order.order_type || '').toLowerCase() === String(pendingType || '').toLowerCase()) {
+          pendingOrderTypesRef.current.delete(order.id);
+        }
+
         const filteredProducts = (order.products || []).filter(p => Number(p.seller_id) === SELLER_ID);
         const normalizedProducts = filteredProducts.map(p => ({
           ...p,
@@ -262,7 +296,7 @@ const OrderDashboard = () => {
         }));
         return {
           ...order,
-          order_type: normalizeToAllowed(order.order_type, ORDER_TYPES, 'Order'),
+          order_type: normalizeToAllowed(rawOrderType, ORDER_TYPES, 'Order'),
           products: normalizedProducts
         };
       }).filter(o => Array.isArray(o.products) && o.products.length > 0);
