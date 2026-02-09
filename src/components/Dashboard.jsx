@@ -34,7 +34,7 @@ const Dashboard = ({ onNavigate }) => {
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
-  const API_BASE = 'https://kevelionapi.kevelion.com';
+  const API_BASE = "https://adminapi.kevelion.com";
 
   // Fetch buyers count from API
   const fetchBuyersCount = async () => {

@@ -24,7 +24,7 @@ const Slider = () => {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
-  const API_BASE_URL = "https://kevelionapi.kevelion.com";
+  const API_BASE_URL = "https://adminapi.kevelion.com/";
 
   const api = useMemo(() => {
     return axios.create({

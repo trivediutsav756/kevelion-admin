@@ -10,7 +10,7 @@ const Products = () => {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
-  const BASE_URL = 'https://kevelionapi.kevelion.com';
+  const BASE_URL = "https://adminapi.kevelion.com";
 
   const getImageUrl = (imagePath) => {
     if (!imagePath) return null;

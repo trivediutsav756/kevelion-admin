@@ -23,7 +23,7 @@ const Category = () => {
   });
   const [imagePreview, setImagePreview] = useState('');
 
-  const API_BASE_URL = 'https://kevelionapi.kevelion.com';
+  const API_BASE_URL = "https://adminapi.kevelion.com";
 
   // Fetch all categories
   const fetchCategories = async () => {

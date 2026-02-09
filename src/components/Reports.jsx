@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 const Reports = () => {
-  const API_BASE = 'https://kevelionapi.kevelion.com';
+  const API_BASE = "https://adminapi.kevelion.com";
 
   const [orders, setOrders] = useState([]);
   const [buyerNameById, setBuyerNameById] = useState({});

@@ -21,7 +21,7 @@ const Faqs = () => {
     status: 'active'
   });
 
-  const API_BASE_URL = 'https://kevelionapi.kevelion.com';
+  const API_BASE_URL = "https://adminapi.kevelion.com";
 
   const endpoints = useMemo(
     () => ({

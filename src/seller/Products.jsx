@@ -52,7 +52,7 @@ const Products = () => {
     warranty: '',
     seller_id: ''
   });
-  const BASE_URL = 'https://kevelionapi.kevelion.com';
+  const BASE_URL = "https://adminapi.kevelion.com";
 
   // ✅ VALIDATE UPLOAD FILES
   const validateUploadFiles = () => {

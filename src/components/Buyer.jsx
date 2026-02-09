@@ -13,7 +13,7 @@ import {
 } from 'react-icons/fi';
 
 // API base URL
-const API_BASE = 'https://kevelionapi.kevelion.com';
+const API_BASE = "https://adminapi.kevelion.com";
 
 const Buyer = () => {
   const [allBuyers, setAllBuyers] = useState([]);

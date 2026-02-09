@@ -31,7 +31,7 @@ const OrderManagement = () => {
   const [orderTypeFilter, setOrderTypeFilter] = useState('all');
   const [orderTypeOptions, setOrderTypeOptions] = useState([{ value: 'all', label: 'All Types' }]);
   const [expandedOrders, setExpandedOrders] = useState({});
-  const BASE_URL = 'https://kevelionapi.kevelion.com';
+  const BASE_URL = "https://adminapi.kevelion.com";
 
   const pendingOrderTypesRef = useRef(new Map());
 

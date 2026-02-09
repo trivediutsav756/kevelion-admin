@@ -18,7 +18,7 @@ import {
   FiPlus,
 } from 'react-icons/fi';
 
-const API_BASE_URL = "https://kevelionapi.kevelion.com";
+const API_BASE_URL = "https://adminapi.kevelion.com";
 
 // Company type options
 const COMPANY_TYPE_OPTIONS = [

@@ -68,7 +68,7 @@ const StatusDropdown = ({ value, onChange, disabled }) => {
 
 const OrderDashboard = () => {
   const SELLER_ID = 6;
-  const API_BASE_URL = 'https://kevelionapi.kevelion.com';
+  const API_BASE_URL = "https://adminapi.kevelion.com";
 
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
