@@ -247,18 +247,35 @@ const Seller = () => {
     setLoading(true);
     setError('');
     try {
-      // Fetch sellers
-      const sellersResponse = await fetch(`${API_BASE_URL}/sellers`, {
-        headers: {
-          'Accept': 'application/json',
-        },
-      });
+      const sellersEndpoints = [
+        `${API_BASE_URL}/sellerswithPackage`,
+        `${API_BASE_URL}/sellers`,
+      ];
 
-      if (!sellersResponse.ok) {
-        throw new Error(`Failed to fetch sellers: ${sellersResponse.status}`);
+      let sellersData = null;
+      let sellersOk = false;
+      let sellersStatus = null;
+
+      for (const ep of sellersEndpoints) {
+        try {
+          const res = await fetch(ep, {
+            headers: { 'Accept': 'application/json' },
+          });
+          sellersStatus = res.status;
+          if (res.ok) {
+            sellersData = await res.json();
+            sellersOk = true;
+            break;
+          }
+        } catch {
+          // continue
+        }
       }
 
-      const sellersData = await sellersResponse.json();
+      if (!sellersOk || sellersData == null) {
+        throw new Error(`Failed to fetch sellers: ${sellersStatus ?? 'Unknown status'}`);
+      }
+
       let sellersList = [];
 
       // Handle different response formats
@@ -377,151 +394,29 @@ let packageName =
                 startDate.setDate(startDate.getDate() + Number(durationDays));
                 packageEndDate = startDate.toISOString();
               }
-            } else {
-              // Try to fetch individual package details
-              try {
-                // Try both singular and plural endpoints for robustness
-                const detailEndpoints = [
-                  `${API_BASE_URL}/subscription-package/${packageId}`,
-                  `${API_BASE_URL}/subscription-packages/${packageId}`,
-                ];
-                let detailData = null;
-                for (const dep of detailEndpoints) {
-                  try {
-                    const packageResponse = await fetch(dep);
-                    if (packageResponse.ok) {
-                      detailData = await packageResponse.json();
-                      break;
-                    }
-                  } catch {
-                    // continue
-                  }
-                }
-                if (detailData) {
-                  packageDetails = detailData.data || detailData;
-                  packageName =
-                    packageDetails.package_name ||
-                    packageDetails.name ||
-                    packageDetails.title ||
-                    'Package';
-
-                  const durationDays =
-                    packageDetails.duration_days ||
-                    packageDetails.payment_time ||
-                    0;
-
-                  const startDateRaw =
-                    seller.subscription_start_date ||
-                    seller.package_start_date ||
-                    seller.current_package_start ||
-                    seller.start_date ||
-                    seller.created_at ||
-                    null;
-
-                  if (!packageEndDate && startDateRaw && durationDays) {
-                    const startDate = new Date(startDateRaw);
-                    startDate.setDate(startDate.getDate() + Number(durationDays));
-                    packageEndDate = startDate.toISOString();
-                  }
-                }
-              } catch (packageError) {
-                console.warn(`Could not fetch package ${packageId}:`, packageError);
-              }
             }
           }
 
-          if (packageName === 'No Package') {
-            try {
-              const detailEndpoints = [
-                `${API_BASE_URL}/seller/${seller.id}`,
-                `${API_BASE_URL}/seller/detail/${seller.id}`
-              ];
-              let detail = null;
-              for (const dep of detailEndpoints) {
-                try {
-                  const r = await fetch(dep, { headers: { 'Accept': 'application/json' } });
-                  if (r.ok) {
-                    const d = await r.json();
-                    detail = d.data || d.seller || d;
-                    break;
-                  }
-                } catch {}
-              }
-              if (detail) {
-                const pid =
-                  detail.subscription_package_id ||
-                  detail.package_id ||
-                  detail.current_package?.id ||
-                  null;
-                const pname =
-                  detail.package_name ||
-                  detail.subscription_package?.name ||
-                  detail.current_package?.name ||
-                  null;
-                if (pname) {
-                  packageName = pname;
-                } else if (pid) {
-                  const fromList = packages.find((p) => p.id == pid || p.package_id == pid);
-                  if (fromList) {
-                    packageName =
-                      fromList.package_name ||
-                      fromList.name ||
-                      fromList.title ||
-                      'Package';
-                  }
-                }
-              }
-            } catch {}
-          }
+          let companyWebsite = seller.company_website || seller.company?.company_website || null;
+          let companyName = seller.company_name || seller.company?.company_name || null;
+          let companyGst = seller.company_GST_number || seller.company?.company_GST_number || null;
 
-          if (packageName === 'No Package') {
+          if (!companyWebsite && seller.id) {
             try {
-              const histEp = `${API_BASE_URL}/seller/package-history/${seller.id}`;
-              const r = await fetch(histEp, { headers: { 'Accept': 'application/json' } });
+              const r = await fetch(`${API_BASE_URL}/seller/${seller.id}`, {
+                headers: { 'Accept': 'application/json' },
+              });
               if (r.ok) {
-                const h = await r.json();
-                const arr =
-                  (h.success && Array.isArray(h.data) && h.data) ||
-                  (Array.isArray(h.history) && h.history) ||
-                  (Array.isArray(h) && h) ||
-                  (Array.isArray(h.data) && h.data) ||
-                  [];
-                if (arr.length > 0) {
-                  arr.sort((a, b) => {
-                    const da = new Date(a.created_at || a.start_date || 0);
-                    const db = new Date(b.created_at || b.start_date || 0);
-                    return db - da;
-                  });
-                  const last = arr[0];
-                  const histName =
-                    last.package_name ||
-                    last.packageName ||
-                    last.package?.name ||
-                    null;
-                  const histId =
-                    last.package_id ||
-                    last.subscription_package_id ||
-                    last.package?.id ||
-                    null;
-                  if (histName) {
-                    packageName = histName;
-                  } else if (histId) {
-                    const fromList = packages.find((p) => p.id == histId || p.package_id == histId);
-                    if (fromList) {
-                      packageName =
-                        fromList.package_name ||
-                        fromList.name ||
-                        fromList.title ||
-                        'Package';
-                    }
-                  }
-                  if (!packageEndDate) {
-                    packageEndDate =
-                      last.subscription_end_date ||
-                      last.package_end_date ||
-                      last.end_date ||
-                      null;
-                  }
+                const d = await r.json();
+                const company =
+                  d.company ||
+                  d.data?.company ||
+                  d.data?.data?.company ||
+                  null;
+                if (company && typeof company === 'object') {
+                  companyWebsite = company.company_website || companyWebsite;
+                  companyName = company.company_name || companyName;
+                  companyGst = company.company_GST_number || companyGst;
                 }
               }
             } catch {}
@@ -532,14 +427,14 @@ let packageName =
             name: seller.name || 'N/A',
             email: seller.email || 'N/A',
             mobile: seller.mobile || 'N/A',
-            company_name: seller.company_name || 'N/A',
+            company_name: companyName || 'N/A',
             company_type: seller.company_type || 'N/A',
-            company_GST_number: seller.company_GST_number || 'N/A',
-            company_website: seller.company_website || 'N/A',
+            company_GST_number: companyGst || 'N/A',
+            company_website: companyWebsite || '',
             status: seller.status || 'inactive',
             approve_status: seller.approve_status || 'pending',
             subscription: seller.subscription || 0,
-            subscription_package_id: seller.subscription_package_id || null,
+            subscription_package_id: packageId || null,
             subscription_end_date: packageEndDate,
              package_name: packageName,
             package_details: packageDetails,
@@ -739,13 +634,13 @@ let packageName =
       }
 
       // Get package details if exists
-      if (processedData.subscription_package_id) {
+      if (processedData.subscription_package_id || processedData.current_package_id || processedData.package_id) {
         try {
-          const packageResponse = await fetch(`${API_BASE_URL}/subscription-package/${processedData.subscription_package_id}`);
-          if (packageResponse.ok) {
-            const packageData = await packageResponse.json();
-            processedData.package_details = packageData.data || packageData;
-            processedData.package_name = processedData.package_details.name || processedData.package_details.title || 'Package';
+          const pid = processedData.subscription_package_id || processedData.current_package_id || processedData.package_id;
+          const pkg = subscriptionPackages.find((p) => p.id == pid || p.package_id == pid);
+          if (pkg) {
+            processedData.package_details = pkg;
+            processedData.package_name = pkg.package_name || pkg.name || pkg.title || 'Package';
           }
         } catch (packageError) {
           console.warn('Could not fetch package details:', packageError);
@@ -1079,6 +974,9 @@ let packageName =
         sellerData.seller ||
         sellerData;
 
+      const cachedSeller = sellers.find((s) => String(s.id) === String(sellerId));
+      const cachedPackageId = cachedSeller?.subscription_package_id ?? null;
+
       setFormData({
         name: processedData.name || '',
         mobile: processedData.mobile || '',
@@ -1088,7 +986,7 @@ let packageName =
         approve_status: processedData.approve_status || 'Pending',
         device_token: processedData.device_token || 'default_device_token',
         subscription: processedData.subscription || 0,
-        subscription_package_id: processedData.subscription_package_id || null,
+        subscription_package_id: processedData.subscription_package_id || cachedPackageId || null,
         company_name: processedData.company_name || '',
         company_type: normalizeCompanyType(processedData.company_type || 'Proprietorship'),
         company_GST_number: processedData.company_GST_number || '',
