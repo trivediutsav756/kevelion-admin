@@ -23,7 +23,7 @@ const OrderManagement = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [actionError, setActionError] = useState(null);
-  const [sellerId, setSellerId] = useState(6);
+  const [sellerId] = useState(6);
 
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -171,58 +171,55 @@ const OrderManagement = () => {
       setLoading(true);
       setLoadError(null);
       setActionError(null);
-      console.log(' Fetching all orders for seller...');
-      // Fetch orders
-      const ordersResponse = await axios.get(
-        `${BASE_URL}/orders?seller_id=${sellerId}`,
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000,
+      console.log(' Fetching all orders...');
+
+      let ordersPayload = [];
+      const orderEndpoints = [`${BASE_URL}/orders/`, `${BASE_URL}/orders`];
+      for (const ep of orderEndpoints) {
+        try {
+          const res = await axios.get(ep, {
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 10000,
+          });
+          if (Array.isArray(res.data)) {
+            ordersPayload = res.data;
+          } else if (res.data?.data && Array.isArray(res.data.data)) {
+            ordersPayload = res.data.data;
+          } else {
+            ordersPayload = [];
+          }
+          break;
+        } catch (e) {
+          if (ep === orderEndpoints[orderEndpoints.length - 1]) throw e;
         }
-      );
-      // Fetch products for seller
-      const productsResponse = await axios.get(
-        `${BASE_URL}/products?seller_id=${sellerId}`,
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000,
-        }
-      );
-      // Fetch categories
-      const categoriesResponse = await axios.get(
-        `${BASE_URL}/categories`,
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000,
-        }
-      );
-      // Fetch subcategories
-      const subcategoriesResponse = await axios.get(
-        `${BASE_URL}/subcategories`,
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000,
-        }
-      );
-      console.log(' API Response - Orders:', ordersResponse.data);
-      console.log(' API Response - Products:', productsResponse.data);
-      // Create maps
-      const productMap = {};
-      (productsResponse.data.data || []).forEach(p => {
-        productMap[p.id] = p;
-      });
+      }
+
       const categoryMap = {};
-      (categoriesResponse.data || []).forEach(c => {
-        categoryMap[c.id] = c.category_name;
-      });
+      try {
+        const categoriesResponse = await axios.get(`${BASE_URL}/categories`, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000,
+        });
+        (categoriesResponse.data || []).forEach(c => {
+          categoryMap[c.id] = c.category_name;
+        });
+      } catch {}
+
       const subcategoryMap = {};
-      (subcategoriesResponse.data || []).forEach(s => {
-        subcategoryMap[s.id] = s;
-      });
+      try {
+        const subcategoriesResponse = await axios.get(`${BASE_URL}/subcategories`, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000,
+        });
+        (subcategoriesResponse.data || []).forEach(s => {
+          subcategoryMap[s.id] = s;
+        });
+      } catch {}
+
       const groupedOrders = [];
 
-      if (Array.isArray(ordersResponse.data)) {
-        ordersResponse.data.forEach(order => {
+      if (Array.isArray(ordersPayload)) {
+        ordersPayload.forEach(order => {
           if (order.products && Array.isArray(order.products)) {
             const sellerProducts = order.products;
 
@@ -231,6 +228,15 @@ const OrderManagement = () => {
               const paymentStatus = sellerProducts[0]?.payment_status?.toLowerCase() || 'pending';
               const totalQuantity = sellerProducts.reduce((sum, p) => sum + (p.quantity || 0), 0);
               const totalAmount = sellerProducts.reduce((sum, p) => sum + (parseFloat(p.price || 0) * (p.quantity || 0)), 0);
+              const sellerNames = Array.from(
+                new Set(
+                  sellerProducts
+                    .map((p) => p?.seller_details?.seller_name || p?.seller_details?.sellerName || null)
+                    .filter(Boolean)
+                    .map(String)
+                )
+              );
+              const resolvedSellerNames = sellerNames.length > 0 ? sellerNames : ['N/A'];
 
               const pendingType = pendingOrderTypesRef.current.get(order.id);
               const resolvedOrderType = pendingType || order.order_type;
@@ -238,25 +244,34 @@ const OrderManagement = () => {
                 pendingOrderTypesRef.current.delete(order.id);
               }
 
+              const buyerDetails = order.buyer_details || order.buyer || null;
+              const buyerId = buyerDetails?.buyer_id ?? buyerDetails?.id ?? order.buyer_id;
+              const buyerName = buyerDetails?.buyer_name ?? buyerDetails?.name ?? order.buyer_name ?? `Buyer ${buyerId ?? ''}`.trim();
+              const buyerEmail = buyerDetails?.buyer_email ?? buyerDetails?.email ?? order.buyer_email ?? 'N/A';
+              const buyerPhone = buyerDetails?.buyer_mobile ?? buyerDetails?.mobile ?? order.buyer_mobile ?? order.buyer_phone ?? 'N/A';
+
               groupedOrders.push({
                 orderId: order.id,
-                buyerId: order.buyer_id,
+                buyerId: buyerId ?? order.buyer_id,
                 orderType: resolvedOrderType,
                 createdAt: order.created_at,
                 updatedAt: order.updated_at,
                 orderStatus: orderStatus,
                 paymentStatus: paymentStatus,
-                buyerName: order.buyer_name || `Buyer ${order.buyer_id}`,
-                buyerEmail: order.buyer_email || 'N/A',
-                buyerPhone: order.buyer_mobile || order.buyer_phone || 'N/A',
+                buyerName,
+                buyerEmail,
+                buyerPhone,
                 shippingAddress: order.shipping_address || 'Address not available',
+                sellerNames: resolvedSellerNames.join(', '),
                 totalQuantity: totalQuantity,
                 totalAmount: totalAmount.toFixed(2),
                 productCount: sellerProducts.length,
                 products: sellerProducts.map(product => {
-                  const fullProduct = productMap[product.product_id];
-                  const catName = fullProduct ? categoryMap[fullProduct.cat_id] || 'Unknown' : 'Unknown';
-                  const subCat = fullProduct ? subcategoryMap[fullProduct.cat_sub_id] : null;
+                  const fullProduct = product.product_details || null;
+                  const catId = fullProduct?.cat_id ?? null;
+                  const subCatId = fullProduct?.cat_sub_id ?? null;
+                  const catName = catId != null ? (categoryMap[catId] || 'Unknown') : 'Unknown';
+                  const subCat = subCatId != null ? subcategoryMap[subCatId] : null;
                   const subCatName = subCat ? subCat.subcategory_name : 'N/A';
                   return {
                     orderProductId: product.id,
@@ -266,11 +281,12 @@ const OrderManagement = () => {
                     price: parseFloat(product.price) || 0,
                     orderStatus: (product.order_status || 'new').toLowerCase(),
                     paymentStatus: (product.payment_status || 'pending').toLowerCase(),
-                    productName: fullProduct?.name || `Product ${product.product_id}`,
+                    productName: fullProduct?.name || `Product ${product.product_id ?? ''}`.trim() || 'Product',
                     productImage: fullProduct?.f_image ? `${BASE_URL}/uploads/${fullProduct.f_image}` : null,
                     sku: fullProduct?.sku || 'N/A',
                     category: fullProduct ? `${catName} / ${subCatName}` : 'General',
-                    subcategory: subCatName
+                    subcategory: subCatName,
+                    sellerName: product?.seller_details?.seller_name || product?.seller_details?.sellerName || 'N/A'
                   };
                 })
               });
@@ -422,7 +438,7 @@ const OrderManagement = () => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Order Management</h1>
-              <p className="text-gray-600 mt-1">Seller Orders (Seller ID: {sellerId})</p>
+              <p className="text-gray-600 mt-1">All Orders</p>
               <p className="text-sm text-gray-500 mt-1">Total Orders: {orders.length}</p>
             </div>
             <div className="flex flex-wrap gap-3 items-end">
@@ -565,6 +581,7 @@ const OrderManagement = () => {
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order Details</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order Type</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Buyer</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Seller</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Products</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -603,6 +620,9 @@ const OrderManagement = () => {
                           <td className="px-6 py-4">
                             <div className="text-sm text-gray-900">{order.buyerName}</div>
                             <div className="text-sm text-gray-500">ID: {order.buyerId}</div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="text-sm text-gray-900">{order.sellerNames || 'N/A'}</div>
                           </td>
 
                           <td className="px-6 py-4">

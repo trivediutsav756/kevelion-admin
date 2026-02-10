@@ -157,6 +157,98 @@ const Reports = () => {
     return buyerNameById[String(id)] || 'N/A';
   };
 
+  const getSellerNames = (order) => {
+    const products = order?.products;
+    if (!Array.isArray(products) || products.length === 0) return 'N/A';
+    const names = Array.from(
+      new Set(
+        products
+          .map((p) => p?.seller_details?.seller_name || p?.seller_details?.sellerName || null)
+          .filter(Boolean)
+          .map(String)
+      )
+    );
+    return names.length ? names.join(', ') : 'N/A';
+  };
+
+  const getBuyerId = (order) => {
+    return (
+      order?.buyer_details?.buyer_id ??
+      order?.buyer_details?.id ??
+      order?.buyer_id ??
+      order?.buyerId ??
+      order?.buyer?.id ??
+      'N/A'
+    );
+  };
+
+  const getOrderCreatedAt = (order) => {
+    return order?.created_at || order?.createdAt || order?.created || null;
+  };
+
+  const computeFilteredOrdersForExport = () => {
+    const start = startDate ? safeDate(`${startDate}T00:00:00`) : null;
+    const end = endDate ? safeDate(`${endDate}T23:59:59.999`) : null;
+    if ((startDate && !start) || (endDate && !end)) return { invalid: true, items: [] };
+    if (start && end && start > end) return { invalid: true, items: [] };
+
+    const items = orders
+      .map((order) => ({ order, created: safeDate(getOrderCreatedAt(order)) }))
+      .filter(({ created }) => !!created)
+      .filter(({ created }) => {
+        if (start && created < start) return false;
+        if (end && created > end) return false;
+        return true;
+      })
+      .sort((a, b) => b.created - a.created)
+      .map(({ order }) => order);
+
+    return { invalid: false, items };
+  };
+
+  const downloadCsv = (rows, filename) => {
+    const escape = (value) => {
+      if (value == null) return '';
+      const s = String(value);
+      const needsQuotes = /[",\n\r]/.test(s);
+      const escaped = s.replace(/"/g, '""');
+      return needsQuotes ? `"${escaped}"` : escaped;
+    };
+
+    const headers = ['Order ID', 'Created At', 'Order Type', 'Buyer ID', 'Buyer Name', 'Seller Name'];
+    const lines = [headers.join(',')];
+
+    rows.forEach((order) => {
+      const orderId = order?.id ?? 'N/A';
+      const createdAt = formatDateTime(getOrderCreatedAt(order));
+      const orderType = order?.order_type ?? order?.orderType ?? 'N/A';
+      const buyerId = getBuyerId(order);
+      const buyerName = getBuyerName(order);
+      const sellerNames = getSellerNames(order);
+
+      lines.push(
+        [
+          escape(orderId),
+          escape(createdAt),
+          escape(orderType),
+          escape(buyerId),
+          escape(buyerName),
+          escape(sellerNames),
+        ].join(',')
+      );
+    });
+
+    const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
@@ -177,6 +269,23 @@ const Reports = () => {
                 className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
               >
                 {loading ? 'Refreshing...' : 'Refresh'}
+              </button>
+              <button
+                onClick={() => {
+                  const result = computeFilteredOrdersForExport();
+                  if (result.invalid) return;
+                  const hasFilter = !!startDate || !!endDate;
+                  const startLabel = startDate || 'all';
+                  const endLabel = endDate || 'all';
+                  const filename = hasFilter
+                    ? `reports_orders_${startLabel}_to_${endLabel}.csv`
+                    : 'reports_orders_all.csv';
+                  downloadCsv(result.items, filename);
+                }}
+                disabled={loading || range.invalid || orders.length === 0}
+                className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
+              >
+                Download CSV
               </button>
               <button
                 onClick={() => {
@@ -290,6 +399,7 @@ const Reports = () => {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Created At</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Buyer Name</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Buyer ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Seller</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
                   </tr>
                 </thead>
@@ -299,7 +409,8 @@ const Reports = () => {
                       <td className="px-4 py-3 text-sm font-medium text-blue-600">#{order?.id}</td>
                       <td className="px-4 py-3 text-sm text-gray-800">{formatDateTime(order?.created_at || order?.createdAt || order?.created)}</td>
                       <td className="px-4 py-3 text-sm text-gray-800">{getBuyerName(order)}</td>
-                      <td className="px-4 py-3 text-sm text-gray-800">{order?.buyer_id ?? 'N/A'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-800">{getBuyerId(order)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-800">{getSellerNames(order)}</td>
                       <td className="px-4 py-3 text-sm text-gray-800">{order?.order_type ?? order?.orderType ?? 'N/A'}</td>
                     </tr>
                   ))}

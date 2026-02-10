@@ -987,7 +987,7 @@ let packageName =
         device_token: processedData.device_token || 'default_device_token',
         subscription: processedData.subscription || 0,
         subscription_package_id: processedData.subscription_package_id || cachedPackageId || null,
-        company_name: processedData.company_name || '',
+          company_name: processedData.company_name || '',
         company_type: normalizeCompanyType(processedData.company_type || 'Proprietorship'),
         company_GST_number: processedData.company_GST_number || '',
         company_logo: null,
