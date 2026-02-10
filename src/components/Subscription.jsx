@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 
 const Subscription = () => {
   const [packages, setPackages] = useState([]);
-  const [packageUsageCountById, setPackageUsageCountById] = useState({});
   const initialFormData = {
     package_name: '',
     total_sales: '',
@@ -22,31 +21,6 @@ const Subscription = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const API_BASE = "https://adminapi.kevelion.com";
-
-  const fetchPackageUsage = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/sellerswithPackage`, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-      });
-      if (!response.ok) {
-        setPackageUsageCountById({});
-        return;
-      }
-      const data = await response.json();
-      const sellers = Array.isArray(data) ? data : (Array.isArray(data?.sellers) ? data.sellers : []);
-      const map = {};
-      sellers.forEach((s) => {
-        const pid = s?.package_id ?? s?.subscription_package_id ?? s?.current_package_id ?? null;
-        if (pid == null) return;
-        const key = String(pid);
-        map[key] = (map[key] || 0) + 1;
-      });
-      setPackageUsageCountById(map);
-    } catch {
-      setPackageUsageCountById({});
-    }
-  };
 
   // Fetch all packages from API
   const fetchPackages = async () => {
@@ -80,25 +54,6 @@ const Subscription = () => {
   const fetchPackage = async (id) => {
     try {
       setError('');
-      const existing = packages.find((p) => String(p?.id) === String(id));
-      if (existing) {
-        setFormData({
-          package_name: existing.package_name || '',
-          total_sales: existing.total_sales?.toString() || '',
-          max_product_add: existing.max_product_add?.toString() || '',
-          payment_time: existing.payment_time?.toString() || '',
-          package_price: existing.package_price?.toString() || '',
-          product_high_priority: existing.product_high_priority || 'No',
-          product_top_search: existing.product_top_search || 'No',
-          product_supplier_tag: existing.product_supplier_tag || 'No'
-        });
-
-        setIsEditing(true);
-        setEditingId(id);
-        setShowForm(true);
-        return;
-      }
-
       const response = await fetch(`${API_BASE}/subscription-package/${id}`, {
         method: 'GET',
         headers: {
@@ -252,11 +207,6 @@ const Subscription = () => {
 
   // Handle delete
   const handleDelete = async (id) => {
-    const usedCount = packageUsageCountById[String(id)] || 0;
-    if (usedCount > 0) {
-      setError(`Cannot delete this package because ${usedCount} seller(s) are using it.`);
-      return;
-    }
     if (!window.confirm('Are you sure you want to delete this package?')) {
       return;
     }
@@ -275,7 +225,6 @@ const Subscription = () => {
       }
 
       await fetchPackages();
-      await fetchPackageUsage();
     } catch (err) {
       console.error('Error deleting package:', err);
       setError(`Failed to delete package: ${err.message}`);
@@ -309,7 +258,6 @@ const Subscription = () => {
 
   useEffect(() => {
     fetchPackages();
-    fetchPackageUsage();
   }, []);
 
   return (
@@ -824,17 +772,8 @@ const Subscription = () => {
                           </button>
                           <button
                             onClick={() => handleDelete(pkg.id)}
-                            disabled={(packageUsageCountById[String(pkg.id)] || 0) > 0}
-                            className={`p-1 transition duration-200 ${
-                              (packageUsageCountById[String(pkg.id)] || 0) > 0
-                                ? 'text-gray-400 cursor-not-allowed'
-                                : 'text-red-600 hover:text-red-900'
-                            }`}
-                            title={
-                              (packageUsageCountById[String(pkg.id)] || 0) > 0
-                                ? `Cannot delete (used by ${packageUsageCountById[String(pkg.id)]} seller(s))`
-                                : 'Delete Package'
-                            }
+                            className="text-red-600 hover:text-red-900 p-1 transition duration-200"
+                            title="Delete Package"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
