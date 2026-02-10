@@ -197,18 +197,33 @@ const Seller = () => {
   // ============ Fetch Subscription Packages ============
   const fetchSubscriptionPackages = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/subscription-packages`, {
-        headers: {
-          'Accept': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
+      // Try both with and without trailing slash to be resilient to server routing
+      const endpoints = [
+        `${API_BASE_URL}/subscription-packages`,
+        `${API_BASE_URL}/subscription-packages/`,
+      ];
+      let data = null;
+      let ok = false;
+      for (const ep of endpoints) {
+        try {
+          const response = await fetch(ep, {
+            headers: {
+              'Accept': 'application/json',
+            },
+          });
+          if (response.ok) {
+            data = await response.json();
+            ok = true;
+            break;
+          }
+        } catch (e) {
+          // continue to next endpoint
+        }
+      }
+      if (!ok || data == null) {
         console.error('Failed to fetch subscription packages');
         return [];
       }
-
-      const data = await response.json();
       
       // Handle different response formats
       let packages = [];
@@ -257,9 +272,9 @@ const Seller = () => {
         throw new Error('Unexpected response format from server');
       }
 
-      // Fetch subscription packages
       const packages = await fetchSubscriptionPackages();
-      setSubscriptionPackages(packages);
+setSubscriptionPackages(packages);
+
 
       // Process sellers with package details
       const processedSellers = await Promise.all(
@@ -288,38 +303,46 @@ const Seller = () => {
               nestedSub.expiry_date
             )) ||
             null;
+let packageName =
+  seller.package_name ||
+  seller.subscription_package_name ||
+  seller.plan_name ||
 
-          // Derive package name if already present
-          let packageName =
-            seller.package_name ||
-            seller.subscription_package_name ||
-            seller.plan_name ||
-            (nestedSub && (
-              nestedSub.package_name ||
-              nestedSub.subscription_package_name ||
-              nestedSub.plan_name ||
-              (nestedSub.package && (
-                nestedSub.package.package_name ||
-                nestedSub.package.name ||
-                nestedSub.package.title
-              ))
-            )) ||
-            'No Package';
+  // 🔥 VERY IMPORTANT (most APIs use this)
+  seller.subscription_package?.name ||
+  seller.subscription_package?.package_name ||
+
+  seller.current_package?.name ||
+  seller.current_package?.package_name ||
+
+  (nestedSub && (
+    nestedSub.package_name ||
+    nestedSub.name ||
+    nestedSub.plan_name ||
+    nestedSub.package?.name ||
+    nestedSub.package?.package_name
+  )) ||
+
+  'No Package';
 
           // Try multiple possible field names for package ID (including current_package_id from /sellers API)
-          let packageId =
-            seller.subscription_package_id ||
-            seller.package_id ||
-            seller.subscription_id ||
-            seller.current_package_id ||
-            seller.plan_id ||
-            (nestedSub && (
-              nestedSub.subscription_package_id ||
-              nestedSub.package_id ||
-              nestedSub.subscription_id ||
-              nestedSub.plan_id
-            )) ||
-            null;
+       let packageId =
+  seller.subscription_package_id ||
+  seller.package_id ||
+  seller.plan_id ||
+  seller.current_package_id ||
+
+  seller.subscription_package?.id ||
+  seller.current_package?.id ||
+
+  (nestedSub && (
+    nestedSub.subscription_package_id ||
+    nestedSub.package_id ||
+    nestedSub.id
+  )) ||
+
+  null;
+
 
           // If seller has a package ID, get package details
           if (packageId) {
@@ -357,10 +380,25 @@ const Seller = () => {
             } else {
               // Try to fetch individual package details
               try {
-                const packageResponse = await fetch(`${API_BASE_URL}/subscription-package/${packageId}`);
-                if (packageResponse.ok) {
-                  const packageData = await packageResponse.json();
-                  packageDetails = packageData.data || packageData;
+                // Try both singular and plural endpoints for robustness
+                const detailEndpoints = [
+                  `${API_BASE_URL}/subscription-package/${packageId}`,
+                  `${API_BASE_URL}/subscription-packages/${packageId}`,
+                ];
+                let detailData = null;
+                for (const dep of detailEndpoints) {
+                  try {
+                    const packageResponse = await fetch(dep);
+                    if (packageResponse.ok) {
+                      detailData = await packageResponse.json();
+                      break;
+                    }
+                  } catch {
+                    // continue
+                  }
+                }
+                if (detailData) {
+                  packageDetails = detailData.data || detailData;
                   packageName =
                     packageDetails.package_name ||
                     packageDetails.name ||
@@ -392,6 +430,103 @@ const Seller = () => {
             }
           }
 
+          if (packageName === 'No Package') {
+            try {
+              const detailEndpoints = [
+                `${API_BASE_URL}/seller/${seller.id}`,
+                `${API_BASE_URL}/seller/detail/${seller.id}`
+              ];
+              let detail = null;
+              for (const dep of detailEndpoints) {
+                try {
+                  const r = await fetch(dep, { headers: { 'Accept': 'application/json' } });
+                  if (r.ok) {
+                    const d = await r.json();
+                    detail = d.data || d.seller || d;
+                    break;
+                  }
+                } catch {}
+              }
+              if (detail) {
+                const pid =
+                  detail.subscription_package_id ||
+                  detail.package_id ||
+                  detail.current_package?.id ||
+                  null;
+                const pname =
+                  detail.package_name ||
+                  detail.subscription_package?.name ||
+                  detail.current_package?.name ||
+                  null;
+                if (pname) {
+                  packageName = pname;
+                } else if (pid) {
+                  const fromList = packages.find((p) => p.id == pid || p.package_id == pid);
+                  if (fromList) {
+                    packageName =
+                      fromList.package_name ||
+                      fromList.name ||
+                      fromList.title ||
+                      'Package';
+                  }
+                }
+              }
+            } catch {}
+          }
+
+          if (packageName === 'No Package') {
+            try {
+              const histEp = `${API_BASE_URL}/seller/package-history/${seller.id}`;
+              const r = await fetch(histEp, { headers: { 'Accept': 'application/json' } });
+              if (r.ok) {
+                const h = await r.json();
+                const arr =
+                  (h.success && Array.isArray(h.data) && h.data) ||
+                  (Array.isArray(h.history) && h.history) ||
+                  (Array.isArray(h) && h) ||
+                  (Array.isArray(h.data) && h.data) ||
+                  [];
+                if (arr.length > 0) {
+                  arr.sort((a, b) => {
+                    const da = new Date(a.created_at || a.start_date || 0);
+                    const db = new Date(b.created_at || b.start_date || 0);
+                    return db - da;
+                  });
+                  const last = arr[0];
+                  const histName =
+                    last.package_name ||
+                    last.packageName ||
+                    last.package?.name ||
+                    null;
+                  const histId =
+                    last.package_id ||
+                    last.subscription_package_id ||
+                    last.package?.id ||
+                    null;
+                  if (histName) {
+                    packageName = histName;
+                  } else if (histId) {
+                    const fromList = packages.find((p) => p.id == histId || p.package_id == histId);
+                    if (fromList) {
+                      packageName =
+                        fromList.package_name ||
+                        fromList.name ||
+                        fromList.title ||
+                        'Package';
+                    }
+                  }
+                  if (!packageEndDate) {
+                    packageEndDate =
+                      last.subscription_end_date ||
+                      last.package_end_date ||
+                      last.end_date ||
+                      null;
+                  }
+                }
+              }
+            } catch {}
+          }
+
           return {
             id: seller.id || '',
             name: seller.name || 'N/A',
@@ -406,7 +541,7 @@ const Seller = () => {
             subscription: seller.subscription || 0,
             subscription_package_id: seller.subscription_package_id || null,
             subscription_end_date: packageEndDate,
-            package_name: packageName,
+             package_name: packageName,
             package_details: packageDetails,
             company_logo: seller.company_logo || '',
             aadhar_number: seller.aadhar_number || '',
@@ -499,6 +634,7 @@ const Seller = () => {
       
       // Try multiple possible endpoints
       const endpoints = [
+        `${API_BASE_URL}/product_seller/${sellerId}`,
         `${API_BASE_URL}/product/seller/${sellerId}`,
         `${API_BASE_URL}/products/seller/${sellerId}`,
         `${API_BASE_URL}/seller/${sellerId}/products`
@@ -539,6 +675,8 @@ const Seller = () => {
         
         if (data.success && Array.isArray(data.data)) {
           products = data.data;
+        } else if (data.success && data.data && Array.isArray(data.data.products)) {
+          products = data.data.products;
         } else if (Array.isArray(data.products)) {
           products = data.products;
         } else if (Array.isArray(data)) {
@@ -550,6 +688,7 @@ const Seller = () => {
         }
 
         setSellerProducts(products);
+        setProductsError(products.length === 0 ? '' : '');
       }
     } catch (err) {
       console.error('Error fetching products:', err);
@@ -1534,11 +1673,11 @@ const Seller = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredSellers.map((seller) => (
-                  <tr key={seller.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-2 py-3 whitespace-nowrap text-xs font-medium text-gray-900 w-16">
-                      {seller.id}
-                    </td>
+              {filteredSellers.map((seller, index) => (
+  <tr key={seller.id} className="hover:bg-gray-50 transition-colors">
+                 <td className="px-2 py-3 whitespace-nowrap text-xs font-medium text-gray-900 w-16">
+  {index + 1}
+</td>
                     <td className="px-2 py-3 w-48">
                       <div className="flex items-center space-x-2">
                         <div className="h-8 w-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
@@ -1993,7 +2132,7 @@ const Seller = () => {
                         <option value="">No Package</option>
                         {subscriptionPackages.map(pkg => (
                           <option key={pkg.id} value={pkg.id}>
-                            {pkg.name || pkg.title} - ₹{pkg.price}
+                            {(pkg.package_name || pkg.name || pkg.title) + ' - ₹' + (pkg.package_price || pkg.price || '')}
                           </option>
                         ))}
                       </select>
