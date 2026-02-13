@@ -12,6 +12,10 @@ const Sidebar = ({ activeTab, setActiveTab, sidebarOpen, setSidebarOpen, user, o
     { id: 'orders', label: 'Orders', icon: '📋' },
     { id: 'reports', label: 'Reports', icon: '📈' },
     { id: 'subscriptions', label: 'Subscriptions', icon: '💳' }, // Added Subscriptions menu item
+    { id: 'colors', label: 'Colors', icon: '🎨' },
+    { id: 'materials', label: 'Materials', icon: '🧱' },
+    { id: 'finishes', label: 'Finishes', icon: '✨' },
+    { id: 'countries', label: 'Countries', icon: '🌍' },
     { id: 'sliders', label: 'Sliders', icon: '🎞️' }, // Added Sliders menu item
     { id: 'faqs', label: 'FAQs', icon: '❓' },
   ];
@@ -32,6 +36,7 @@ const Sidebar = ({ activeTab, setActiveTab, sidebarOpen, setSidebarOpen, user, o
         w-64 bg-white border-r border-gray-200 transform
         transition-transform duration-300 ease-in-out
         flex flex-col
+        h-full lg:h-screen overflow-y-auto overscroll-contain
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         {/* Logo */}
@@ -53,12 +58,16 @@ const Sidebar = ({ activeTab, setActiveTab, sidebarOpen, setSidebarOpen, user, o
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-6 space-y-2">
+        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto overscroll-contain">
           {menuItems.map((item) => (
             <button
               key={item.id}
               onClick={() => {
-                setActiveTab(item.id);
+                const next = String(item.id || '').trim();
+                setActiveTab(next);
+                try {
+                  localStorage.setItem('retaillian_active_tab', next);
+                } catch {}
                 setSidebarOpen(false);
               }}
               className={`

@@ -14,6 +14,10 @@ import Buyer from './components/Buyer';
 import AdminOrderDashboard from './components/Order';
 import Reports from './components/Reports';
 import Subscription from './components/Subscription'; // ✅ Added Subscription import
+  import Colors from './components/Colors';
+  import Materials from './components/Materials';
+  import Finishes from './components/Finishes';
+  import Countries from './components/Countries';
 import Slider from './components/Slider';
 import Faqs from './components/Faqs'; // ✅ Added Faqs import
 
@@ -26,6 +30,19 @@ function App() {
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+ 
+  // Persist active tab across reloads/re-renders
+  useEffect(() => {
+    const savedTab = localStorage.getItem('retaillian_active_tab');
+    if (savedTab) {
+      setActiveTab(savedTab);
+    }
+  }, []);
+  useEffect(() => {
+    if (activeTab) {
+      localStorage.setItem('retaillian_active_tab', activeTab);
+    }
+  }, [activeTab]);
  
   // Check for existing authentication on app load
   useEffect(() => {
@@ -86,6 +103,14 @@ function App() {
         return <Reports />;
       case 'subscriptions': // ✅ Added subscriptions case
         return <Subscription />;
+      case 'colors':
+        return <Colors />;
+      case 'materials':
+        return <Materials />;
+      case 'finishes':
+        return <Finishes />;
+      case 'countries':
+        return <Countries />;
       case 'sliders':
         return <Slider />;
       case 'faqs':

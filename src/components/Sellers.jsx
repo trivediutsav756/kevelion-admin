@@ -147,6 +147,7 @@ const Seller = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
   const [subscriptionPackages, setSubscriptionPackages] = useState([]);
+  const [approvalStartBySellerId, setApprovalStartBySellerId] = useState({});
 
   const [formData, setFormData] = useState({
     name: '',
@@ -397,6 +398,33 @@ let packageName =
             }
           }
 
+          // Force default package id=1 on Approved status (display consistency)
+          if (seller.approve_status === 'Approved') {
+            const DEFAULT_PACKAGE_ID = 1;
+            const defaultPkg = packages.find((p) => String(p.id) === String(DEFAULT_PACKAGE_ID) || String(p.package_id) === String(DEFAULT_PACKAGE_ID)) || null;
+            packageId = DEFAULT_PACKAGE_ID;
+            if (defaultPkg) {
+              packageDetails = defaultPkg;
+              packageName = defaultPkg.package_name || defaultPkg.name || defaultPkg.title || 'Package';
+              const durationDays =
+                defaultPkg.duration_days ||
+                defaultPkg.payment_time ||
+                30;
+              const startDateRaw =
+                approvalStartBySellerId[String(seller.id)] ||
+                seller.current_package_start ||
+                seller.subscription_start_date ||
+                seller.created_at ||
+                new Date().toISOString();
+              const startDate = new Date(startDateRaw);
+              const endDateCalc = new Date(startDate);
+              endDateCalc.setDate(endDateCalc.getDate() + Number(durationDays));
+              packageEndDate = endDateCalc.toISOString();
+            } else {
+              packageName = 'higher';
+            }
+          }
+
           let companyWebsite = seller.company_website || seller.company?.company_website || null;
           let companyName = seller.company_name || seller.company?.company_name || null;
           let companyGst = seller.company_GST_number || seller.company?.company_GST_number || null;
@@ -452,7 +480,11 @@ let packageName =
             account_type: seller.account_type || 'savings',
             created_at: seller.created_at || '',
             updated_at: seller.updated_at || '',
-            subscription_start_date: seller.subscription_start_date || seller.created_at,
+            subscription_start_date:
+              approvalStartBySellerId[String(seller.id)] ||
+              seller.current_package_start ||
+              seller.subscription_start_date ||
+              seller.created_at,
           };
         })
       );
@@ -644,6 +676,25 @@ let packageName =
           }
         } catch (packageError) {
           console.warn('Could not fetch package details:', packageError);
+        }
+      }
+
+      if (processedData.approve_status === 'Approved') {
+        processedData.package_name = 'higher';
+        processedData.subscription_package_id = 1;
+        processedData.current_package_id = 1;
+        processedData.subscription_start_date =
+          approvalStartBySellerId[String(sellerId)] ||
+          processedData.current_package_start ||
+          processedData.subscription_start_date ||
+          new Date().toISOString();
+        if (!processedData.subscription_end_date && processedData.subscription_start_date) {
+          const pkg = subscriptionPackages.find((p) => String(p.id) === '1' || String(p.package_id) === '1');
+          const durationDays = (pkg?.duration_days ?? pkg?.payment_time ?? 30);
+          const sd = new Date(processedData.subscription_start_date);
+          const ed = new Date(sd);
+          ed.setDate(ed.getDate() + Number(durationDays));
+          processedData.subscription_end_date = ed.toISOString();
         }
       }
 
@@ -915,23 +966,83 @@ let packageName =
   const handleApprovalStatusChange = async (sellerId, newStatus) => {
     try {
       setError('');
-      const payload = { 
-        approve_status: newStatus 
-      };
-      
-      const res = await fetch(`${API_BASE_URL}/seller/${sellerId}`, {
-        method: 'PATCH',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-      
-      if (!res.ok) {
-        throw new Error(`Failed to update status: ${res.status}`);
+      let initialPatchOk = true;
+      let errorText = '';
+      if (newStatus !== 'Approved') {
+        const payload = { approve_status: newStatus };
+        const res = await fetch(`${API_BASE_URL}/seller/${sellerId}`, {
+          method: 'PATCH',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          initialPatchOk = false;
+          errorText = await res.text().catch(() => '');
+        }
+        if (!initialPatchOk) {
+          throw new Error(`Failed to update status: ${errorText || res.status}`);
+        }
       }
-      
+
+      if (newStatus === 'Approved') {
+        try {
+          const DEFAULT_PACKAGE_ID = 1;
+          let defaultPkg = null;
+          try {
+            const r = await fetch(`${API_BASE_URL}/subscription-packages`, {
+              headers: { 'Accept': 'application/json' },
+            });
+            if (r.ok) {
+              const d = await r.json();
+              const arr = Array.isArray(d) ? d : (d?.data && Array.isArray(d.data) ? d.data : []);
+              defaultPkg =
+                arr.find((p) => String(p.id) === String(DEFAULT_PACKAGE_ID) || String(p.package_id) === String(DEFAULT_PACKAGE_ID)) || null;
+            }
+          } catch {}
+
+          const durationDays =
+            (defaultPkg?.duration_days ?? defaultPkg?.payment_time ?? null) ?? 30;
+
+          const start = new Date();
+          const end = new Date(start);
+          end.setDate(end.getDate() + Number(durationDays));
+
+          setApprovalStartBySellerId((prev) => ({
+            ...prev,
+            [String(sellerId)]: start.toISOString(),
+          }));
+
+          const assignBodyApproved = {
+            approve_status: newStatus,
+            current_package_id: DEFAULT_PACKAGE_ID,
+            current_package_start: start.toISOString(),
+            current_package_end: end.toISOString(),
+            subscription_package_id: DEFAULT_PACKAGE_ID,
+            subscription_start_date: start.toISOString(),
+            subscription_end_date: end.toISOString(),
+          };
+
+          const assignRes = await fetch(`${API_BASE_URL}/seller/${sellerId}`, {
+            method: 'PATCH',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(assignBodyApproved)
+          });
+
+          if (!assignRes.ok) {
+            const text = await assignRes.text();
+            console.warn('Failed to assign default package:', assignRes.status, text.slice(0, 200));
+          }
+        } catch (e) {
+          console.warn('Error while assigning default package:', e?.message || e);
+        }
+      }
+
       await fetchSellers();
       alert(`Approval status updated to ${newStatus}!`);
     } catch (err) {
@@ -1098,6 +1209,52 @@ let packageName =
         historyData = data;
       } else if (data.data && Array.isArray(data.data)) {
         historyData = data.data;
+      }
+
+      const currentPkgId =
+        seller.current_package_id ??
+        seller.subscription_package_id ??
+        seller.package_id ??
+        null;
+
+      const currentStart =
+        seller.current_package_start ??
+        seller.subscription_start_date ??
+        null;
+
+      const currentEnd =
+        seller.current_package_end ??
+        seller.subscription_end_date ??
+        null;
+
+      let currentPackageName = seller.package_name || null;
+      if (!currentPackageName && currentPkgId && Array.isArray(subscriptionPackages)) {
+        const pkg = subscriptionPackages.find((p) => String(p.id) === String(currentPkgId) || String(p.package_id) === String(currentPkgId));
+        if (pkg) {
+          currentPackageName = pkg.package_name || pkg.name || pkg.title || 'Package';
+        }
+      }
+
+      const hasSimilarCurrent =
+        currentPkgId != null &&
+        historyData.some((h) => {
+          const hStart = h.start_date || h.startDate || h.package_start_date || h.created_at || null;
+          const hEnd = h.end_date || h.endDate || h.package_end_date || h.expiry_date || null;
+          const hPkgId = h.package_id || h.subscription_package_id || null;
+          return String(hPkgId || '') === String(currentPkgId) &&
+            String(hStart || '') === String(currentStart || '') &&
+            String(hEnd || '') === String(currentEnd || '');
+        });
+
+      if (currentPkgId && (currentStart || currentEnd) && !hasSimilarCurrent) {
+        historyData.unshift({
+          id: 'current-assignment',
+          package_id: currentPkgId,
+          package_name: currentPackageName || 'Package',
+          status: 'Active',
+          start_date: currentStart,
+          end_date: currentEnd,
+        });
       }
       
       historyData.sort((a, b) => {
@@ -1756,6 +1913,7 @@ let packageName =
                     </div>
                   </div>
                   <InfoField label="Subscription Package" value={selectedSeller.package_name} />
+                  <InfoField label="Subscription Start Date" value={selectedSeller.subscription_start_date} type="date" />
                   <InfoField label="Subscription End Date" value={selectedSeller.subscription_end_date} type="date" />
                   <InfoField label="Created Date" value={selectedSeller.created_at} type="date" />
                   <InfoField label="Updated Date" value={selectedSeller.updated_at} type="date" />
